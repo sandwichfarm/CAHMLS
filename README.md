@@ -1,122 +1,173 @@
-# Cordn Ad-hoc
+<div align="center">
 
-Web-based MLS coordinator for ad-hoc Cordn groups. The app runs a ContextVM/Nostr
-coordinator in a browser tab, publishes its coordinator pubkey, and lets Cordn clients
-use that browser tab as the group coordination server.
+# CAHMLS
 
-## Purpose
+Cordn Ad-Hoc MLS: a ContextVM coordinator and chat interface that runs in a browser tab.
 
-Cordn Ad-hoc is for quickly bringing up a temporary MLS coordinator for Cordn without
-provisioning a backend. It is meant for short-lived groups, demos, local testing, and
-operator-controlled coordination sessions where a browser tab can stay open for the
-life of the group.
+[![CI](https://img.shields.io/github/actions/workflow/status/sandwichfarm/CAHMLS/ci.yml?branch=master&style=for-the-badge&label=CI)](https://github.com/sandwichfarm/CAHMLS/actions/workflows/ci.yml)
+[![Stars](https://img.shields.io/github/stars/sandwichfarm/CAHMLS?style=for-the-badge)](https://github.com/sandwichfarm/CAHMLS/stargazers)
 
-## What It Does
+<img src="startup-screen-verified.png" alt="CAHMLS coordinator start screen" width="568" />
 
-- Runs the Cordn coordinator protocol from a browser.
-- Receives ContextVM MCP requests over Nostr relays.
-- Stores MLS key packages, welcomes, join requests, and group messages locally.
-- Supports streaming group-message subscriptions.
-- Persists relay/runtime configuration in browser storage.
-- Optionally encrypts and persists the coordinator identity behind a passphrase.
-- Prevents multiple coordinators with the same pubkey from running at once.
-- Exposes an operator debug log for raw Nostr events, decoded requests, responses, relay publish state, and instance heartbeats.
+</div>
 
-## Local Development
+## What is this?
 
-Requirements:
+CAHMLS brings up a temporary [Cordn](https://github.com/Cordn-msg/cordn) MLS coordinator without a backend. The tab receives [ContextVM](https://contextvm.org) MCP requests over Nostr relays, stores group state, and serves Cordn clients until it closes. The same app is also an MLS chat client, so you can host and join rooms from one workspace.
 
-- Node.js 22 or newer
-- pnpm 10.17.1
+It suits short-lived groups, demos, local testing, and operator-controlled sessions where a tab can stay open for the life of the group. Use a hosted coordinator when availability matters.
 
-Install dependencies:
+## Quick Start
+
+Requires Node.js 22+ and pnpm 10.17.1.
 
 ```bash
 pnpm install
-```
-
-Start the dev server:
-
-```bash
 pnpm dev
 ```
 
-The app listens on `127.0.0.1`. If Vite reports that the default port is busy, use the alternate URL it prints.
+Open the URL Vite prints (`http://localhost:5173` unless the port is taken). The dev server binds to `0.0.0.0`, so it is also reachable from your local network.
 
-## Operator Flow
+## Features
 
-1. Open the app.
-2. Copy the coordinator pubkey.
-3. Configure the relay list that Cordn clients will use.
-4. Start the coordinator.
-5. Use the coordinator pubkey from a Cordn client.
-6. Watch the debug log if the client does not connect or does not mark messages as sent.
+- **Coordinator:** runs the Cordn method surface in the browser, including streaming group-message subscriptions, and refuses to start a second instance with the same pubkey.
+- **Chat:** create and join rooms, with grouped messages, reactions, unread counts, presence, and notifications.
+- **Invites:** share a room by link or QR code, or send a direct invitation over Nostr.
+- **Identity:** use a persistent, rotatable anonymous identity, a NIP-07 extension, or a NIP-46 remote signer (bunker URI or QR code).
+- **Persistence:** optionally encrypt the coordinator key behind a passphrase and keep coordinator data in a SQLite-WASM snapshot. Both are opt-in.
+- **Diagnostics:** inspect raw Nostr events, decoded requests, responses, relay publish state, and resource usage.
 
-The coordinator locks runtime configuration while running. Stop it before changing relays, announcement mode, or user limits.
+## How It Works
 
-## Warnings and Pitfalls
+```mermaid
+graph LR
+    Clients[Cordn clients and<br/>other CAHMLS tabs] <-->|ContextVM MCP| Relays[Nostr relays]
+    Relays <--> Transport
 
-- The browser tab is the coordinator. Closing it, refreshing it, or losing network access interrupts coordination.
-- Relay lists must match what clients can reach. A working coordinator still looks offline to clients on the wrong relays.
-- Persisted browser config overrides new defaults. Reset defaults if a stale relay list keeps coming back.
-- Encrypted identity persistence is optional. Without it, a fresh browser profile or cleared storage creates a new coordinator pubkey.
-- Only run one coordinator per pubkey. A second instance should fail with `cordn already running`; if it does not, stop both and restart one.
-- This is not a hardened always-on service. Use a proper hosted coordinator when availability matters.
-- The debug log can show encrypted event metadata and request shapes. Avoid sharing screenshots when coordination details are sensitive.
+    subgraph Tab[Browser tab]
+        Transport[Nostr transport] <--> Methods[Cordn coordinator methods]
+        Methods <--> Storage[(Memory or<br/>SQLite-WASM)]
+        Chat[Chat UI and MLS client] <-->|Local client| Methods
+        Operator[Operator controls and debug log] --> Transport
+    end
+```
 
-## Debugging Client Delivery
+## Running a Coordinator
 
-The debug log is the primary operator surface.
+1. Open the app and complete first-run setup.
+2. Review the relay list. Clients must be able to reach these relays.
+3. Start the coordinator.
+4. Give Cordn clients the coordinator pubkey, or create a room and share its invite.
+5. Watch the debug log if a client does not connect or does not mark messages as sent.
 
-Useful entries:
+Defaults are announcements off, autostart off, and a limit of 64 users. Runtime configuration locks while the coordinator runs, so stop it before changing relays, announcement mode, or user limits.
 
-- `raw nostr event received`: a relay delivered an event to the coordinator.
-- `decoded client request`: the event decrypted and decoded as an MCP request.
-- `disabled_unused_stream`: a non-streaming request carried a progress token, so the coordinator removed the unused stream guard before responding.
-- `outbound coordinator response`: the MCP response body was produced.
-- `publishing nostr response event`: the response is being published to relays.
-- `nostr response event accepted`: at least one relay accepted the response.
+### Warnings
 
-For normal message posts, the decoded request should show `tool=msg_post`, and the response should include `cursor`, `gid`, and `at`.
+> [!WARNING]
+> The browser tab is the coordinator. Closing it, refreshing it, or losing network access interrupts coordination. This is not a hardened always-on service.
+
+- **Relay mismatch:** a working coordinator looks offline to clients on different relays.
+- **Stale config:** saved browser configuration overrides new app defaults. Edit the relay list directly. Destroying the coordinator also resets configuration, but it deletes the coordinator key and pubkey too.
+- **Identity loss:** without encrypted persistence, a fresh browser profile or cleared storage creates a new coordinator pubkey.
+- **Duplicate instances:** run one coordinator per pubkey. A second instance should fail with `cordn already running`. If it does not, stop both and restart one.
+- **Sensitive logs:** the debug log can show encrypted event metadata and request shapes. Avoid sharing screenshots when coordination details are sensitive.
+
+### Debugging Client Delivery
+
+The debug log traces each request in order:
+
+| Log entry | Meaning |
+|-----------|---------|
+| `raw nostr event received` | A relay delivered an event to the coordinator. |
+| `decoded client request` | The event decrypted and decoded as an MCP request. |
+| `disabled_unused_stream` | A non-streaming request carried a progress token, so the coordinator removed the unused stream guard before responding. |
+| `outbound coordinator response` | The coordinator produced the MCP response body. |
+| `publishing nostr response event` | The response is being published to relays. |
+| `nostr response event accepted` | At least one relay accepted the response. |
+
+For a normal message post, the decoded request shows `tool=msg_post` and the response includes `cursor`, `gid`, and `at`.
+
+## Development
+
+| Command | Purpose |
+|---------|---------|
+| `pnpm lint` | Run ESLint |
+| `pnpm exec tsc --noEmit` | Type-check |
+| `pnpm test` | Run Vitest unit tests |
+| `pnpm test:e2e` | Build, then run Playwright in Chromium (first run: `pnpm exec playwright install chromium`) |
+| `pnpm build` | Type-check and build to `dist/` |
+| `pnpm run ci` | Run lint, unit tests, build, and e2e in sequence |
+| `pnpm check:upstream` | Compare coordinator methods and schemas with live Cordn upstream |
+| `pnpm test:upstream-interop` | Run a pinned upstream Cordn client against CAHMLS's real transport |
+
+Use `pnpm run ci`, not `pnpm ci`, which is a reserved pnpm command that fails. The build may print upstream Rolldown warnings from dependency pure annotations. They are currently non-fatal.
+
+### Project Structure
+
+```
+.github/workflows/    CI and nsite deploy
+.nsite/               nsyte site configuration
+.planning/            GSD requirements, roadmap, and phase records
+scripts/              Upstream checks and deploy secret setup
+src/
+├── chat/             MLS protocol, room state, invites, coordinator clients
+├── components/       Svelte 5 UI
+├── config/           Relay and runtime configuration
+├── coordinator/      Coordinator lifecycle, instance guard, resource monitor
+├── cordn/            Cordn methods, contracts, and storage
+├── crypto/           Coordinator keys and browser signer
+├── identity/         Anonymous, NIP-07, and NIP-46 identities
+├── invites/          Nostr invite envelopes and social data
+├── lib/              Relay pool and transport
+├── navigation/       Workspace routing
+├── notifications/    Notification center and channel preferences
+└── shims/            Browser shims for Node modules
+tests/
+├── e2e/              Playwright specs
+└── unit/             Vitest tests
+```
 
 ## Deployment
 
-The deploy workflow publishes the built `dist` output to Nostr and Blossom after CI passes on `main` or `master`.
+After CI passes on `main` or `master`, the deploy workflow publishes `dist/` to Nostr and Blossom with [nsyte](https://nsyte.run). It skips the deploy if the required secrets are not set.
 
-Configure repository secrets with:
+Configure repository secrets with GitHub CLI authenticated:
 
 ```bash
 ./scripts/setup-secrets.sh
 ```
 
-The script requires GitHub CLI authentication and prompts for:
+The script prompts for:
 
-- `NBUNK_SECRET`: the `nbunksec1...` credential from `nsyte ci`
-- `NSYTE_RELAYS`: one or more Nostr relay URLs
-- `BLOSSOM_SERVER_URLS`: one or more Blossom server URLs
-- `NSITE_NAME`: optional named nsite
+| Secret | Value |
+|--------|-------|
+| `NBUNK_SECRET` | The `nbunksec1...` credential from `nsyte ci` |
+| `NSYTE_RELAYS` | Comma-separated Nostr relay URLs |
+| `BLOSSOM_SERVER_URLS` | Comma-separated Blossom server URLs |
+| `NSITE_NAME` | Optional named nsite. Leave empty for the root npub site. |
 
-List-style secret prompts accept comma-separated input. The script stores list secrets as newline-separated values for the deploy action.
+## Documentation
 
-## Checks
+| Resource | Description |
+|----------|-------------|
+| [AGENTS.md](AGENTS.md) | Delivery lifecycle, quality gates, and Cordn interoperability guardrails |
+| [GIT-PROCEDURES.md](GIT-PROCEDURES.md) | Branch, commit, and pull request procedure |
+| [.planning/PROJECT.md](.planning/PROJECT.md) | Project scope, context, and decisions |
+| [.planning/ROADMAP.md](.planning/ROADMAP.md) | Milestones and phases |
 
-Run the standard local checks:
+## Contributing
 
-```bash
-pnpm lint
-pnpm test
-pnpm build
-pnpm test:e2e
-```
+Work on a feature branch and open a pull request against `master`. Follow [GIT-PROCEDURES.md](GIT-PROCEDURES.md) and run the gates in [AGENTS.md](AGENTS.md). Changes to `src/cordn/`, coordinator contracts, or chat admission and wire-protocol paths must also pass `pnpm check:upstream` and `pnpm test:upstream-interop`.
 
-Run everything in sequence:
+<a href="https://github.com/sandwichfarm/CAHMLS/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=sandwichfarm/CAHMLS" alt="Contributors" />
+</a>
 
-```bash
-pnpm ci
-```
+---
 
-The build may print upstream Rolldown warnings from dependency pure annotations. Those warnings are currently non-fatal.
+<div align="center">
 
-## Notes
+[![Star History Chart](https://api.star-history.com/svg?repos=sandwichfarm/CAHMLS&type=Date)](https://star-history.com/#sandwichfarm/CAHMLS&Date)
 
-This is a browser-hosted coordinator. Closing the browser tab stops the coordinator. Enable encrypted persistence if the same coordinator identity should survive reloads.
+</div>
