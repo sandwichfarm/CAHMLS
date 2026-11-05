@@ -5,7 +5,7 @@ import {
   createGiftWrap,
   createLocalNip44Signer,
   unwrapGiftWrap,
-} from "../../src/invites/nostr-envelope";
+} from "@cahmls/sdk/client";
 import {
   inviteEligibilityError,
   NostrSocialStore,

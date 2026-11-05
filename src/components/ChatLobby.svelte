@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { createSameShellChatHref } from "../chat/room-navigation";
-  import { hostIdentityForRoom, listRooms, ROOMS_CHANGED_EVENT, type StoredRoom } from "../chat/room-store";
+  import { hostIdentityForRoom, listRooms, ROOMS_CHANGED_EVENT, type StoredRoom } from "@cahmls/sdk/client";
   import RoomHostBadge from "./RoomHostBadge.svelte";
 
   interface Props {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, tick } from "svelte";
-  import { parseInviteUrl } from "../chat/invite";
+  import { parseInviteUrl } from "@cahmls/sdk/client";
   import { createSameShellChatHref } from "../chat/room-navigation";
 
   interface Props {

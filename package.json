@@ -16,7 +16,13 @@
     "test:e2e": "playwright test",
     "check:upstream": "scripts/check-cordn-upstream-parity.sh",
     "test:upstream-interop": "scripts/check-cordn-upstream-interop.sh",
-    "ci": "pnpm lint && pnpm test && pnpm build && pnpm test:e2e"
+    "ci": "pnpm lint && pnpm test && pnpm --filter @cahmls/sdk typecheck && pnpm sdk:coverage && pnpm sdk:verify-package && pnpm docs:build && pnpm build && pnpm test:e2e",
+    "sdk:build": "pnpm --filter @cahmls/sdk build",
+    "sdk:coverage": "pnpm --filter @cahmls/sdk test:coverage",
+    "sdk:verify-package": "pnpm --filter @cahmls/sdk build && pnpm --filter @cahmls/sdk test:package",
+    "docs:dev": "pnpm --filter @cahmls/docs dev",
+    "docs:build": "pnpm --filter @cahmls/docs build",
+    "docs:preview": "pnpm --filter @cahmls/docs preview"
   },
   "dependencies": {
     "@contextvm/mcp-sdk": "1.30.0",
@@ -31,7 +37,8 @@
     "rxjs": "7.8.2",
     "svelte": "5.56.3",
     "ts-mls": "2.0.0-rc.13",
-    "zod": "4.4.3"
+    "zod": "4.4.3",
+    "@cahmls/sdk": "workspace:*"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

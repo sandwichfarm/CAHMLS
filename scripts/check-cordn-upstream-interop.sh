@@ -30,4 +30,4 @@ fi
 
 pnpm --dir "$upstream_dir" install --frozen-lockfile
 CORDN_UPSTREAM_CLI_SESSION="$upstream_dir/packages/cli/src/session.ts" \
-  pnpm exec vitest run tests/unit/cordn-upstream-interop.test.ts --reporter=dot
+  pnpm --filter @cahmls/sdk exec vitest run tests/cordn-upstream-interop.test.ts --reporter=dot

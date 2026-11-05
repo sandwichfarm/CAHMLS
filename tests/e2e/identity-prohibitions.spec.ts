@@ -4,7 +4,7 @@ import { NostrConnectProvider, PrivateKeySigner } from "applesauce-signers/signe
 import { SimplePool, type Filter, type NostrEvent } from "nostr-tools";
 import { Observable } from "rxjs";
 
-import { startMockRelay, type MockRelay } from "./mock-relay";
+import { startMockRelay, type MockRelay } from "../../packages/sdk/tests/support/mock-relay";
 
 const identityStorageKey = "cordn:v1:anonymous-identity";
 const roomStoragePrefix = "cordn-adhoc-chat-room:";

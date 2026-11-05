@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { ConfigStore, normalizeCoordinatorName } from "../../src/config/config.svelte";
-import { DEFAULT_MAX_USERS } from "../../src/config/config-validator";
+import { DEFAULT_MAX_USERS } from "@cahmls/sdk/runtime";
 
 const DEFAULT_PUBLIC_RELAYS = [
   "wss://relay2.contextvm.org",

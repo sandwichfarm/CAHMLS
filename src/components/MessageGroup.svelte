@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { ChatEmojiShortcut } from "../chat/protocol";
-  import { parseInviteMessage, type ChatInvite, type RoomHostIdentity } from "../chat/invite";
-  import type { ReactionSummary, StoredMessage } from "../chat/room-store";
+  import type { ChatEmojiShortcut } from "@cahmls/sdk/client";
+  import { parseInviteMessage, type ChatInvite, type RoomHostIdentity } from "@cahmls/sdk/client";
+  import type { ReactionSummary, StoredMessage } from "@cahmls/sdk/client";
   import { createPubkeyAvatar } from "../identity/user-profile.svelte";
   import MessageReactions from "./MessageReactions.svelte";
   import MessageTimestamp from "./MessageTimestamp.svelte";

@@ -26,7 +26,7 @@ import { relative } from "node:path";
 const upstreamDir = process.argv[2];
 const upstreamCommit = process.argv[3];
 const upstreamContracts = readFileSync(`${upstreamDir}/packages/core/src/contracts.ts`, "utf8");
-const browserContracts = readFileSync("src/cordn/contracts/index.ts", "utf8");
+const browserContracts = readFileSync("packages/sdk/src/contracts/index.ts", "utf8");
 
 function methodMap(source, label) {
   const body = source.match(

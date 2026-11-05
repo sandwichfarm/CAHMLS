@@ -10,7 +10,7 @@ import {
 } from "../identity/user-profile.svelte";
 import { notificationCenter } from "../notifications/notification-center.svelte";
 import { registerChannelNotificationRelationships } from "../notifications/channel-preferences.svelte";
-import { createGiftWrap, supportsNip44, unwrapGiftWrap, type Nip44Signer } from "./nostr-envelope";
+import { createGiftWrap, supportsNip44, unwrapGiftWrap, type Nip44Signer } from "@cahmls/sdk/client";
 
 const PRESENCE_RUMOR_KIND = 24133;
 const INVITE_RUMOR_KIND = 24134;

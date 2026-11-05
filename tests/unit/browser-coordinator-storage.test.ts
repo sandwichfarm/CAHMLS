@@ -7,7 +7,7 @@ vi.mock("@sqlite.org/sqlite-wasm", () => ({
 import {
   clearPersistedCoordinatorState,
   createBrowserCoordinatorStorage,
-} from "../../src/cordn/coordinator/storage/browserSqliteStorage";
+} from "@cahmls/sdk/storage/browser";
 import { CoordinatorStore } from "../../src/coordinator/coordinator.svelte";
 
 describe("browser coordinator deleted-room persistence", () => {

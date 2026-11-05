@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { projectStartupSignal } from "../../src/components/startup-signal-presentation";
-import type { CoordinatorStartupProgress, CoordinatorStatus } from "../../src/coordinator/types";
+import type { CoordinatorStartupProgress, CoordinatorStatus } from "@cahmls/sdk/runtime";
 
 function progress(overrides: Partial<CoordinatorStartupProgress> = {}): CoordinatorStartupProgress {
   return {

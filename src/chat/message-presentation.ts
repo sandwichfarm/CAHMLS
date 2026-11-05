@@ -1,4 +1,4 @@
-import type { StoredMessage } from "./room-store";
+import type { StoredMessage } from "@cahmls/sdk/client";
 
 export interface MessageStreak {
   sender: string;

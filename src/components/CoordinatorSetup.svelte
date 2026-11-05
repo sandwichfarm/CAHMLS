@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { validateShareableRelayUrl } from "../config/config-validator";
+  import { validateShareableRelayUrl } from "@cahmls/sdk/runtime";
   import { userProfileStore } from "../identity/user-profile.svelte";
   import type { CoordinatorSetupSubmission } from "./coordinator-setup";
   import IdentityRotationDialog from "./IdentityRotationDialog.svelte";

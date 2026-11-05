@@ -5,7 +5,7 @@ import { NostrClientTransport } from "@contextvm/sdk/transport";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { ConfigStore } from "../../src/config/config.svelte";
-import { ChatCoordinatorClient } from "../../src/chat/coordinator-client";
+import { ChatCoordinatorClient } from "@cahmls/sdk/client";
 import {
   addMember,
   createKeyPackage,
@@ -14,15 +14,15 @@ import {
   encryptMessage,
   groupId,
   joinWelcome,
-} from "../../src/chat/protocol";
-import { BrowserNostrSigner } from "../../src/crypto/browser-nostr-signer";
-import { KeyManager } from "../../src/crypto/key-manager";
+} from "@cahmls/sdk/client";
+import { BrowserNostrSigner } from "@cahmls/sdk/crypto";
+import { KeyManager } from "@cahmls/sdk/crypto";
 import {
   transportFactory,
   type RunningTransport,
   type TransportStartupPhase,
-} from "../../src/lib/transport";
-import { startMockRelay, type MockRelay } from "../e2e/mock-relay";
+} from "@cahmls/sdk/server";
+import { startMockRelay, type MockRelay } from "../../packages/sdk/tests/support/mock-relay";
 
 describe("ContextVM client round trip", () => {
   let relay: MockRelay;

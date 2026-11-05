@@ -1,0 +1,27 @@
+{
+  "$schema": "https://typedoc-plugin-markdown.org/schema.json",
+  "plugin": ["typedoc-plugin-markdown", "typedoc-vitepress-theme"],
+  "tsconfig": "../packages/sdk/tsconfig.build.json",
+  "entryPoints": [
+    "../packages/sdk/src/client/index.ts",
+    "../packages/sdk/src/contracts/index.ts",
+    "../packages/sdk/src/coordinator/index.ts",
+    "../packages/sdk/src/crypto/index.ts",
+    "../packages/sdk/src/mls/index.ts",
+    "../packages/sdk/src/relay/index.ts",
+    "../packages/sdk/src/runtime/index.ts",
+    "../packages/sdk/src/server/index.ts",
+    "../packages/sdk/src/storage-browser.ts"
+  ],
+  "out": "reference",
+  "docsRoot": ".",
+  "readme": "none",
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "githubPages": false,
+  "hidePageHeader": true,
+  "parametersFormat": "table",
+  "interfacePropertiesFormat": "table",
+  "typeDeclarationFormat": "table",
+  "validation": { "notExported": false, "invalidLink": true }
+}

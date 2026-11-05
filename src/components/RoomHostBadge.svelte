@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { RoomHostIdentity } from "../chat/invite";
+  import type { RoomHostIdentity } from "@cahmls/sdk/client";
   import { createPubkeyAvatar } from "../identity/user-profile.svelte";
 
   interface Props {

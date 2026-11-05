@@ -1,4 +1,4 @@
-import type { RunningTransport } from "../lib/transport";
+import type { RunningTransport } from "@cahmls/sdk/server";
 
 type TransportEventSource = {
   on?: (event: string, handler: () => void) => unknown;

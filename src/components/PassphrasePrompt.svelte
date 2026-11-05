@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { listRooms } from "../chat/room-store";
+  import { listRooms } from "@cahmls/sdk/client";
   import type { CoordinatorStore } from "../coordinator/coordinator.svelte";
 
   interface Props {

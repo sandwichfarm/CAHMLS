@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { ReactionSummary } from "../chat/room-store";
-  import { CHAT_EMOJI_SHORTCUTS, type ChatEmojiShortcut } from "../chat/protocol";
+  import type { ReactionSummary } from "@cahmls/sdk/client";
+  import { CHAT_EMOJI_SHORTCUTS, type ChatEmojiShortcut } from "@cahmls/sdk/client";
 
   interface Props {
     messageId: string;

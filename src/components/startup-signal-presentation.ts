@@ -1,4 +1,4 @@
-import type { CoordinatorStartupProgress, CoordinatorStatus } from "../coordinator/types";
+import type { CoordinatorStartupProgress, CoordinatorStatus } from "@cahmls/sdk/runtime";
 
 export interface StartupSignalPresentation {
   readonly phase: CoordinatorStartupProgress["phase"];

@@ -1,4 +1,4 @@
-import type { StoredRoom } from "./room-store";
+import type { StoredRoom } from "@cahmls/sdk/client";
 
 export const SIDEBAR_LEDGER_KEY = "cordn:v1:sidebar-ledger";
 

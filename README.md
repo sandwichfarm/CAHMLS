@@ -97,7 +97,11 @@ For a normal message post, the decoded request shows `tool=msg_post` and the res
 | `pnpm test` | Run Vitest unit tests |
 | `pnpm test:e2e` | Build, then run Playwright in Chromium (first run: `pnpm exec playwright install chromium`) |
 | `pnpm build` | Type-check and build to `dist/` |
-| `pnpm run ci` | Run lint, unit tests, build, and e2e in sequence |
+| `pnpm run ci` | Run lint, unit tests, SDK checks, docs build, app build, and e2e in sequence |
+| `pnpm sdk:coverage` | Run SDK tests with enforced coverage thresholds |
+| `pnpm sdk:verify-package` | Build the SDK and load every published entry point |
+| `pnpm docs:dev` | Serve the SDK documentation locally |
+| `pnpm docs:build` | Build the SDK documentation |
 | `pnpm check:upstream` | Compare coordinator methods and schemas with live Cordn upstream |
 | `pnpm test:upstream-interop` | Run a pinned upstream Cordn client against CAHMLS's real transport |
 
@@ -109,23 +113,32 @@ Use `pnpm run ci`, not `pnpm ci`, which is a reserved pnpm command that fails. T
 .github/workflows/    CI and nsite deploy
 .nsite/               nsyte site configuration
 .planning/            GSD requirements, roadmap, and phase records
+docs/                 VitePress documentation for the SDK
+packages/sdk/         @cahmls/sdk: framework-free coordinator and client
+├── src/client/       Room sessions, MLS protocol, invites, coordinator clients
+├── src/contracts/    Cordn method names and schemas
+├── src/coordinator/  Delivery service and storage
+├── src/crypto/       Coordinator keys and signer
+├── src/mls/          KeyPackage and Welcome codecs
+├── src/relay/        Bounded relay pool
+├── src/runtime/      Coordinator lifecycle and instance guard
+├── src/server/       ContextVM methods and transport
+└── tests/            SDK tests
 scripts/              Upstream checks and deploy secret setup
 src/
-├── chat/             MLS protocol, room state, invites, coordinator clients
+├── chat/             Room navigation, sidebar ledger, message presentation
 ├── components/       Svelte 5 UI
 ├── config/           Relay and runtime configuration
-├── coordinator/      Coordinator lifecycle, instance guard, resource monitor
-├── cordn/            Cordn methods, contracts, and storage
-├── crypto/           Coordinator keys and browser signer
+├── coordinator/      Svelte bindings over the SDK runtime, resource monitor
 ├── identity/         Anonymous, NIP-07, and NIP-46 identities
-├── invites/          Nostr invite envelopes and social data
-├── lib/              Relay pool and transport
+├── invites/          Nostr social data
+├── lib/              Viewport overlay
 ├── navigation/       Workspace routing
 ├── notifications/    Notification center and channel preferences
 └── shims/            Browser shims for Node modules
 tests/
 ├── e2e/              Playwright specs
-└── unit/             Vitest tests
+└── unit/             Application tests
 ```
 
 ## Deployment
@@ -151,6 +164,7 @@ The script prompts for:
 
 | Resource | Description |
 |----------|-------------|
+| [SDK documentation](docs/guide/getting-started.md) | Guides and API reference for `@cahmls/sdk`; run `pnpm docs:dev` to browse |
 | [AGENTS.md](AGENTS.md) | Delivery lifecycle, quality gates, and Cordn interoperability guardrails |
 | [GIT-PROCEDURES.md](GIT-PROCEDURES.md) | Branch, commit, and pull request procedure |
 | [.planning/PROJECT.md](.planning/PROJECT.md) | Project scope, context, and decisions |
@@ -158,7 +172,7 @@ The script prompts for:
 
 ## Contributing
 
-Work on a feature branch and open a pull request against `master`. Follow [GIT-PROCEDURES.md](GIT-PROCEDURES.md) and run the gates in [AGENTS.md](AGENTS.md). Changes to `src/cordn/`, coordinator contracts, or chat admission and wire-protocol paths must also pass `pnpm check:upstream` and `pnpm test:upstream-interop`.
+Work on a feature branch and open a pull request against `master`. Follow [GIT-PROCEDURES.md](GIT-PROCEDURES.md) and run the gates in [AGENTS.md](AGENTS.md). Changes to `packages/sdk/src/`, coordinator contracts, or chat admission and wire-protocol paths must also pass `pnpm check:upstream` and `pnpm test:upstream-interop`.
 
 <a href="https://github.com/sandwichfarm/CAHMLS/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=sandwichfarm/CAHMLS" alt="Contributors" />

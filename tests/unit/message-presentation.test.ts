@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { groupMessageStreaks, nextRelativeMessageTimeDelay, relativeMessageTime } from "../../src/chat/message-presentation";
-import type { StoredMessage } from "../../src/chat/room-store";
+import type { StoredMessage } from "@cahmls/sdk/client";
 
 function message(id: string, sender: string, createdAt = 0): StoredMessage {
   return { type: "message", id, sender, name: sender, content: id, createdAt };
