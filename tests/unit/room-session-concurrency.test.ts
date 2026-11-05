@@ -14,6 +14,9 @@ const protocolMocks = vi.hoisted(() => ({
   hasValidChatEnvelopeAuth: vi.fn(() => true),
   groupId: vi.fn(),
   joinWelcome: vi.fn(),
+  normalizeRecipientPubkeys: vi.fn((value: unknown) => Array.isArray(value)
+    ? [...new Set(value.filter((entry): entry is string => typeof entry === "string" && /^[0-9a-f]{64}$/i.test(entry)).map((entry) => entry.toLowerCase()))]
+    : []),
   sanitizeChatEnvelopeHostBadge: vi.fn((envelope: unknown) => envelope),
   signChatEnvelope: vi.fn((envelope: unknown) => envelope),
 }));
@@ -182,6 +185,41 @@ describe("ChatRoomSession concurrency", () => {
     }));
     expect(session.room.stateBase64).toBe("state-0>first>second");
     expect(session.room.messages.map((message) => message.content)).toEqual(["first", "second"]);
+  });
+
+  it("carries normalized recipients through the queued pending send", async () => {
+    protocolMocks.encryptMessage.mockResolvedValue({ state: "state-1", opaqueBase64: "opaque-recipient" });
+    const publishing = deferred<{ cursor: number; gid: string; at: number }>();
+    coordinatorMocks.postGroupMessage.mockReturnValue(publishing.promise);
+    const session = connectedSession();
+    const recipient = "b".repeat(64);
+
+    const sending = session.send("mention", { recipientPubkeys: [recipient.toUpperCase(), recipient] });
+    await vi.waitFor(() => expect(protocolMocks.encryptMessage).toHaveBeenCalledTimes(1));
+
+    expect(protocolMocks.signChatEnvelope).toHaveBeenCalledWith(expect.objectContaining({
+      recipientPubkeys: [recipient],
+    }), expect.anything());
+    expect(session.room.messages).toEqual([expect.objectContaining({
+      pending: true,
+      recipientPubkeys: [recipient],
+    })]);
+    expect(session.room.pending).toEqual([expect.objectContaining({ id: expect.any(String) })]);
+    publishing.resolve({ cursor: 1, gid: "room-id", at: 1 });
+    await sending;
+  });
+
+  it("fails closed when a targeted send has no valid recipients", async () => {
+    const session = connectedSession();
+
+    await expect(session.send("targeted invite", { recipientPubkeys: ["not-a-pubkey"] }))
+      .rejects.toThrow("Targeted messages require at least one valid recipient");
+
+    expect(protocolMocks.signChatEnvelope).not.toHaveBeenCalled();
+    expect(protocolMocks.encryptMessage).not.toHaveBeenCalled();
+    expect(coordinatorMocks.postGroupMessage).not.toHaveBeenCalled();
+    expect(session.room.messages).toEqual([]);
+    expect(session.room.pending).toEqual([]);
   });
 
   it("waits for an active message pull before encrypting a send", async () => {

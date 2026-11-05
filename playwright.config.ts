@@ -22,7 +22,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `pnpm build && vite preview --host 127.0.0.1 --port ${previewPort}`,
+    command: `VITE_E2E=1 pnpm build && vite preview --host 127.0.0.1 --port ${previewPort}`,
     url: previewUrl,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

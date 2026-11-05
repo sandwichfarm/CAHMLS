@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from "svelte";
-  import { SvelteMap } from "svelte/reactivity";
+  import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import { generate } from "lean-qr";
   import { toSvgDataURL } from "lean-qr/extras/svg";
   import type { CoordinatorIdentity } from "../crypto/key-manager";
@@ -12,8 +12,10 @@
   import { createSameShellAutoJoinHref, createSameShellChatHref } from "../chat/room-navigation";
   import { ChatRoomSession, coordinatorUnreadTotal, createHostedRoom, hostIdentityForRoom, listRooms, loadLastOpenRoom, loadRoom, reactionSummary, rememberActiveHostRoom, rememberLastOpenRoom, removeStoredRoom, roomIdentityKey, roomUnreadCount, ROOMS_CHANGED_EVENT, rotateRoomInvite, sameRoomIdentity, saveRoom, SERVER_OFFLINE_EVENT, SERVER_ONLINE_EVENT, type RoomIdentity, type StoredRoom } from "../chat/room-store";
   import { emptySidebarLedger, parseSidebarLedger, reconcileSidebarLedger, serializeSidebarLedger, SIDEBAR_LEDGER_KEY, type SidebarHistoryEntry, type SidebarLedger } from "../chat/sidebar-ledger";
-  import { CHAT_EMOJI_SHORTCUTS, type ChatEmojiShortcut } from "../chat/protocol";
-  import { groupMessageStreaks } from "../chat/message-presentation";
+  import { CHAT_EMOJI_SHORTCUTS, normalizeRecipientPubkeys, type ChatEmojiShortcut } from "../chat/protocol";
+  import { projectMessagePresentation } from "../chat/message-presentation";
+  import { chatParticipantPreferences, type ParticipantHighlightName } from "../chat/chat-participant-preferences.svelte";
+  import { nostrSocialStore } from "../invites/nostr-social.svelte";
   import {
     type ChatCoordinatorClientFactory,
     type RemoteJoinRequest,
@@ -27,7 +29,7 @@
   import ChatRoute from "./ChatRoute.svelte";
   import PassphrasePrompt from "./PassphrasePrompt.svelte";
   import LifecyclePanel from "./LifecyclePanel.svelte";
-  import MessageGroup from "./MessageGroup.svelte";
+  import MessageGroup, { type ParticipantRoomChoice } from "./MessageGroup.svelte";
   import NotificationCenter from "./NotificationCenter.svelte";
   import NotificationFeed from "./NotificationFeed.svelte";
   import InviteRedeemer from "./InviteRedeemer.svelte";
@@ -89,6 +91,8 @@
   let sidebarLedger = $state<SidebarLedger>(emptySidebarLedger());
   let sidebarHistory = $state<SidebarHistoryEntry[]>([]);
   let composer = $state("");
+  let pendingRecipientPubkeys = $state<string[]>([]);
+  const expandedIgnoredStreaks = new SvelteSet<string>();
   let revision = $state(0);
   let roomConnection = $state<"connecting" | "connected" | "offline">("connecting");
   let roomConnectionDetail = $state<string | undefined>();
@@ -120,6 +124,7 @@
   let roomRemovalMode = $state<"delete" | "leave">("delete");
   let roomRemovalOrigin = $state<HTMLButtonElement | null>(null);
   let reactionPickerMessageId = $state<string | null>(null);
+  let activeParticipantSurfaceKey = $state<string | null>(null);
   let reactionError = $state("");
   let embeddedChatContext = $state<ChatPaneContext | null>(null);
   let remoteCoordinatorReachability = $state<Record<string, CoordinatorReachability>>({});
@@ -134,6 +139,10 @@
   let browserOnline = $state(typeof navigator === "undefined" ? true : navigator.onLine);
   let lastSyncedRouteContext = "";
   let unreadAnnouncement = $state("");
+  // E2E-only metadata lets the transport test distinguish the live session's
+  // unprojected room from the filtered message renderer without exposing text.
+  const e2eBuild = import.meta.env.VITE_E2E === "1";
+  let e2eSessionMessageIds = $state("");
   let autostartAttempted = false;
   let setupWasCompleteOnMount = $state(false);
   const reachabilityProbe = new SimplePoolNostrInstanceNetwork(1_500);
@@ -379,6 +388,7 @@
       const nextRoom = { ...session.room, messages: [...session.room.messages], pending: [...session.room.pending], reactions: [...(session.room.reactions ?? [])] };
       const receivedMessage = nextRoom.messages.some((message) => !knownMessageIds.has(message.id) && message.sender !== nextRoom.stablePubkey);
       knownMessageIds = new Set(nextRoom.messages.map((message) => message.id));
+      if (e2eBuild) e2eSessionMessageIds = session.room.messages.map((message) => message.id).join(",");
       room = nextRoom;
       pendingJoinRequests = [...session.pendingJoinRequests];
       admissionError = session.admissionError;
@@ -1032,6 +1042,83 @@
     composerInput?.focus();
   }
 
+  function mentionParticipant(pubkey: string, displayName: string): void {
+    const input = composerInput;
+    const start = input?.selectionStart ?? composer.length;
+    const end = input?.selectionEnd ?? composer.length;
+    const before = composer.slice(0, start);
+    const after = composer.slice(end);
+    const leading = before && !/\s$/.test(before) ? " " : "";
+    const trailing = after && !/^\s/.test(after) ? " " : "";
+    const token = `@${displayName}`;
+    composer = `${before}${leading}${token}${trailing}${after}`;
+    pendingRecipientPubkeys = [...new Set([...pendingRecipientPubkeys, pubkey.toLowerCase()])];
+    void tick().then(() => {
+      composerInput?.focus();
+      const cursor = before.length + leading.length + token.length + trailing.length;
+      composerInput?.setSelectionRange(cursor, cursor);
+    });
+  }
+
+  function participantRoomChoices(): ParticipantRoomChoice[] {
+    const currentRoom = room;
+    if (!currentRoom) return [];
+    return listRooms()
+      .filter((candidate) => candidate.membershipStatus !== "retired" && !sameRoomIdentity(candidate, currentRoom))
+      .map((candidate) => ({
+        coordinatorPubkey: candidate.coordinatorPubkey,
+        roomId: candidate.id,
+        title: candidate.title,
+        coordinatorLabel: candidate.coordinatorName?.trim() || `Coordinator ${shortKey(candidate.coordinatorPubkey)}`,
+      }));
+  }
+
+  async function inviteParticipantToRoom(participantPubkey: string, choice: ParticipantRoomChoice): Promise<void> {
+    const activeSession = session;
+    const currentRoom = room;
+    const recipients = normalizeRecipientPubkeys([participantPubkey]);
+    if (recipients.length !== 1) throw new Error("This participant cannot receive a targeted invite");
+    const candidate = listRooms().find((stored) => stored.membershipStatus !== "retired"
+      && stored.coordinatorPubkey === choice.coordinatorPubkey
+      && stored.id === choice.roomId);
+    if (!activeSession || !currentRoom || !candidate || sameRoomIdentity(candidate, currentRoom)) throw new Error("Room is no longer available");
+    const inviteUrl = createInviteUrl(window.location.origin, {
+      groupId: candidate.id,
+      coordinatorPubkey: candidate.coordinatorPubkey,
+      relayUrls: candidate.relayUrls,
+      title: candidate.title,
+      coordinatorOrigin: candidate.coordinatorOrigin,
+      coordinatorName: candidate.coordinatorName,
+      inviteToken: candidate.inviteToken,
+      host: hostIdentityForRoom(candidate),
+      coordinatorKeyMode: candidate.coordinatorKeyMode,
+    });
+    activeSession.setIdentity(currentHostIdentity());
+    await activeSession.send(inviteUrl, { recipientPubkeys: recipients });
+  }
+
+  function participantIgnored(pubkey: string): boolean {
+    return room ? chatParticipantPreferences.isIgnored(room.coordinatorPubkey, room.id, pubkey) : false;
+  }
+
+  function setParticipantIgnored(pubkey: string): void {
+    if (!room) return;
+    chatParticipantPreferences.setIgnored(room.coordinatorPubkey, room.id, pubkey, true);
+  }
+
+  function toggleIgnoredStreak(key: string): void {
+    if (expandedIgnoredStreaks.has(key)) expandedIgnoredStreaks.delete(key);
+    else expandedIgnoredStreaks.add(key);
+  }
+
+  function setParticipantHighlight(pubkey: string, name: ParticipantHighlightName | undefined): void {
+    chatParticipantPreferences.setHighlight(pubkey, name);
+  }
+
+  async function followParticipant(pubkey: string): Promise<void> {
+    await nostrSocialStore.follow(pubkey);
+  }
+
   async function setReaction(targetMessageId: string, emoji: ChatEmojiShortcut, active: boolean): Promise<void> {
     if (!session) return;
     reactionError = "";
@@ -1205,15 +1292,18 @@
   async function send() {
     if (!session || !canSendMessages()) return;
     const message = composer;
+    const recipients = [...pendingRecipientPubkeys];
     if (!message.trim()) return;
     void enableSounds(false);
     error = "";
     session.setIdentity(currentHostIdentity());
     composer = "";
+    pendingRecipientPubkeys = [];
     try {
-      await session.send(message);
+      await session.send(message, { recipientPubkeys: recipients });
     } catch (cause) {
       if (!composer.trim()) composer = message;
+      if (pendingRecipientPubkeys.length === 0) pendingRecipientPubkeys = recipients;
       error = cause instanceof Error ? cause.message : "Unable to send this message";
     }
   }
@@ -1812,27 +1902,46 @@
               removalMode="delete"
               onRemove={() => roomRemovalTarget = room}
             />
+            {#if e2eBuild}
+              <output hidden aria-hidden="true" data-testid="host-session-message-probe" data-session-message-ids={e2eSessionMessageIds}>host-session-message-probe</output>
+            {/if}
             <div bind:this={messageList} class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-5 sm:px-6" role="log" aria-live="polite" aria-relevant="additions" data-testid="host-message-list">
               {#if room.messages.length === 0}<div class="flex h-full items-center justify-center"><p class="max-w-sm text-center text-sm leading-6 text-[#82958a]">Your room is ready. Invite someone from the left to begin.</p></div>{/if}
-              {#each groupMessageStreaks(room.messages) as streak (`${streak.sender}:${streak.messages[0].id}`)}
-                <MessageGroup
-                  messages={streak.messages}
-                  viewerPubkey={room.stablePubkey}
-                  reactionsFor={(messageId) => reactionSummary(room, messageId, room.stablePubkey)}
-                  pickerOpenMessageId={reactionPickerMessageId}
-                  disabled={!composerEnabled}
-                  idPrefix="host"
-                  onTogglePicker={(messageId) => reactionPickerMessageId = reactionPickerMessageId === messageId ? null : messageId}
-                  onClosePicker={(messageId) => {
-                    if (reactionPickerMessageId === messageId) reactionPickerMessageId = null;
-                  }}
-                  onToggleReaction={toggleReaction}
-                  onSetReaction={(messageId, emoji) => setReaction(messageId, emoji, true)}
-                  onJoinInvite={(sharedInvite) => navigateFromRail(createSameShellAutoJoinHref(window.location.origin, sharedInvite))}
-                />
+              {#each projectMessagePresentation(room.messages, room.stablePubkey, participantIgnored) as streak (streak.instanceKey)}
+                {#if streak.ignored && !expandedIgnoredStreaks.has(streak.instanceKey)}
+                  <button class="ignored-streak-disclosure" type="button" aria-expanded="false" aria-label={`${streak.messages[0].name || "anon"} posted ${streak.messages.length} ${streak.messages.length === 1 ? "message" : "messages"}. Show messages`} onclick={() => toggleIgnoredStreak(streak.instanceKey)}><span>{streak.messages[0].name || "anon"} posted {streak.messages.length} {streak.messages.length === 1 ? "message" : "messages"}</span> <span>Show messages</span></button>
+                {:else}
+                  {#if streak.ignored}<button class="ignored-streak-disclosure" type="button" aria-expanded="true" aria-label={`${streak.messages[0].name || "anon"} posted ${streak.messages.length} ${streak.messages.length === 1 ? "message" : "messages"}. Hide messages`} onclick={() => toggleIgnoredStreak(streak.instanceKey)}><span>{streak.messages[0].name || "anon"} posted {streak.messages.length} {streak.messages.length === 1 ? "message" : "messages"}</span> <span>Hide messages</span></button>{/if}
+                  <MessageGroup
+                    messages={streak.messages}
+                    viewerPubkey={room.stablePubkey}
+                    reactionsFor={(messageId) => reactionSummary(room, messageId, room.stablePubkey)}
+                    pickerOpenMessageId={reactionPickerMessageId}
+                    participantSurfaceKey={`host:${streak.instanceKey}`}
+                    {activeParticipantSurfaceKey}
+                    disabled={!composerEnabled}
+                    idPrefix="host"
+                    highlight={chatParticipantPreferences.highlightFor(streak.sender)}
+                    followAvailable={Boolean(nostrSocialStore.contactPubkey)}
+                    followStatus={nostrSocialStore.followStatus}
+                    onTogglePicker={(messageId) => reactionPickerMessageId = reactionPickerMessageId === messageId ? null : messageId}
+                    onClosePicker={(messageId) => { if (reactionPickerMessageId === messageId) reactionPickerMessageId = null; }}
+                    onToggleReaction={toggleReaction}
+                    onSetReaction={(messageId, emoji) => setReaction(messageId, emoji, true)}
+                    onActivateParticipantSurface={(key) => activeParticipantSurfaceKey = key}
+                    onDismissParticipantSurface={(key) => { if (activeParticipantSurfaceKey === key) activeParticipantSurfaceKey = null; }}
+                    onJoinInvite={(sharedInvite) => navigateFromRail(createSameShellAutoJoinHref(window.location.origin, sharedInvite))}
+                    participantRooms={participantRoomChoices()}
+                    onMention={mentionParticipant}
+                    onInviteToRoom={inviteParticipantToRoom}
+                    onIgnore={setParticipantIgnored}
+                    onHighlight={setParticipantHighlight}
+                    onFollow={followParticipant}
+                  />
+                {/if}
               {/each}
             </div>
-            <form class="shrink-0 border-t border-[#293832] p-3 sm:p-4" onsubmit={(event) => { event.preventDefault(); void send(); }}><div class="mb-2 flex gap-1 overflow-x-auto pb-1">{#each CHAT_EMOJI_SHORTCUTS as emoji (emoji)}<button type="button" class="emoji-button" aria-label={`Add ${emoji}`} disabled={!composerEnabled} onclick={() => addEmoji(emoji)}>{emoji}</button>{/each}</div><div class="flex gap-2"><input bind:this={composerInput} bind:value={composer} class="host-input min-w-0 flex-1" disabled={!composerEnabled} placeholder={roomConnection === "offline" ? "Room offline" : roomConnection === "connecting" ? "Connecting…" : "Message as host"} /><button class="host-primary px-4 sm:px-5" disabled={!composerEnabled || !composer.trim()}>Send</button></div><p class:unavailable={!composerEnabled} class="host-composer-status">{roomConnection === "offline" ? "Cached messages are read-only while this room is offline." : roomConnection === "connecting" ? "Connecting this room…" : "Connected. Messages are end-to-end encrypted."}</p>{#if reactionError}<p class="reaction-error" role="status">{reactionError}</p>{/if}</form>
+            <form class="shrink-0 border-t border-[#293832] p-3 sm:p-4" data-testid="host-chat-composer" onsubmit={(event) => { event.preventDefault(); void send(); }}><div class="mb-2 flex gap-1 overflow-x-auto pb-1">{#each CHAT_EMOJI_SHORTCUTS as emoji (emoji)}<button type="button" class="emoji-button" aria-label={`Add ${emoji}`} disabled={!composerEnabled} onclick={() => addEmoji(emoji)}>{emoji}</button>{/each}</div><div class="flex gap-2"><input bind:this={composerInput} bind:value={composer} class="host-input min-w-0 flex-1" disabled={!composerEnabled} placeholder={roomConnection === "offline" ? "Room offline" : roomConnection === "connecting" ? "Connecting…" : "Message as host"} /><button class="host-primary px-4 sm:px-5" disabled={!composerEnabled || !composer.trim()}>Send</button></div><p class:unavailable={!composerEnabled} class="host-composer-status">{roomConnection === "offline" ? "Cached messages are read-only while this room is offline." : roomConnection === "connecting" ? "Connecting this room…" : "Connected. Messages are end-to-end encrypted."}</p>{#if reactionError}<p class="reaction-error" role="status">{reactionError}</p>{/if}</form>
           </div>
         {:else if selectedServerIsHome && (coordinator.status !== "running" || (room && session))}
           <div class="startup-stage">
@@ -2178,6 +2287,8 @@
 </main>
 
 <style>
+  .ignored-streak-disclosure { width: 100%; border: 1px solid #293832; background: #101614; padding: 8px 16px; color: #82958a; font-size: 14px; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }
+  .ignored-streak-disclosure:hover, .ignored-streak-disclosure:focus-visible { border-color: #7cf59d; color: #dfffe7; outline: 2px solid #7cf59d; outline-offset: 2px; }
   .host-workspace { max-width: 100vw; overflow: hidden; background: rgb(7 12 9 / .8); }
   .host-workspace > .host-topbar, .host-workspace > .host-layout { transition: filter .18s ease, opacity .18s ease; }
   .host-workspace.dialog-open > .host-topbar, .host-workspace.dialog-open > .host-layout { filter: blur(2px); opacity: .72; }

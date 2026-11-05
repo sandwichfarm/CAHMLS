@@ -17,6 +17,7 @@ import {
   hasValidChatEnvelopeAuth,
   isChatReactionMutation,
   joinWelcome,
+  normalizeRecipientPubkeys,
   sanitizeChatEnvelopeHostBadge,
   signChatEnvelope,
   type ChatEmojiShortcut,
@@ -81,6 +82,11 @@ export interface RoomIdentity {
   avatar?: string;
   badgeLabel?: string;
   badgeEmoji?: string;
+}
+
+/** Structured recipient intent; display text is never parsed for identity. */
+export interface ChatMessageSendOptions {
+  recipientPubkeys?: readonly string[];
 }
 
 /** Immutable authority and navigation identity for a stored room. */
@@ -307,10 +313,14 @@ export class ChatRoomSession {
     this.stop();
   }
 
-  async send(content: string): Promise<void> {
+  async send(content: string, options: ChatMessageSendOptions = {}): Promise<void> {
     const trimmed = content.trim();
     if (!trimmed) return;
     await this.runExclusive(async () => {
+      const recipientPubkeys = normalizeRecipientPubkeys(options.recipientPubkeys);
+      if ((options.recipientPubkeys?.length ?? 0) > 0 && recipientPubkeys.length === 0) {
+        throw new Error("Targeted messages require at least one valid recipient");
+      }
       if (this.stopped || this.status.connection !== "connected") {
         throw new Error("The coordinator must be connected before you can send a message");
       }
@@ -327,6 +337,7 @@ export class ChatRoomSession {
         badgeEmoji: this.room.badgeEmoji,
         content: trimmed,
         createdAt: Date.now(),
+        ...(recipientPubkeys.length > 0 ? { recipientPubkeys } : {}),
       }, this.signer);
       const encrypted = await encryptMessage(decodeState(this.room.stateBase64), event);
       this.room.stateBase64 = encodeState(encrypted.state);
@@ -1591,15 +1602,23 @@ function isStoredMessage(value: unknown): value is StoredMessage {
 function normalizeStoredMessages(messages: StoredMessage[]): StoredMessage[] {
   const normalized = new Map<string, StoredMessage>();
   for (const message of messages) {
-    const existing = normalized.get(message.id);
+    const recipientPubkeys = normalizeRecipientPubkeys(message.recipientPubkeys);
+    const canonicalMessage = recipientPubkeys.length > 0
+      ? { ...message, recipientPubkeys }
+      : (() => {
+          const legacyMessage = { ...message };
+          delete legacyMessage.recipientPubkeys;
+          return legacyMessage;
+        })();
+    const existing = normalized.get(canonicalMessage.id);
     if (!existing) {
-      normalized.set(message.id, message);
+      normalized.set(canonicalMessage.id, canonicalMessage);
       continue;
     }
     const existingCursor = existing.cursor ?? -1;
-    const nextCursor = message.cursor ?? -1;
-    if (nextCursor > existingCursor || (existing.pending === true && message.pending !== true)) {
-      normalized.set(message.id, message);
+    const nextCursor = canonicalMessage.cursor ?? -1;
+    if (nextCursor > existingCursor || (existing.pending === true && canonicalMessage.pending !== true)) {
+      normalized.set(canonicalMessage.id, canonicalMessage);
     }
   }
   return [...normalized.values()];

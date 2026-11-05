@@ -4,16 +4,16 @@ milestone: v1.1
 milestone_name: Quality of Life & Polish
 current_phase: 18
 current_phase_name: Unified Presence, Notifications & Controls
-status: "Phase 18 shipped — PR #8"
-stopped_at: Completed 18-02-PLAN.md
-last_updated: "2026-08-06T15:03:51.570Z"
-last_activity: 2026-08-06
+status: planning
+stopped_at: Completed 24-05-PLAN.md
+last_updated: "2026-08-07T00:24:19.818Z"
+last_activity: 2026-08-07
+last_activity_desc: Phase 24 complete, transitioned to Phase 18
 progress:
-  total_phases: 8
-  completed_phases: 7
-  total_plans: 25
-  completed_plans: 24
-last_activity_desc: Phase 18 execution started
+  total_phases: 9
+  completed_phases: 8
+  total_plans: 33
+  completed_plans: 31
 ---
 
 # Project State
@@ -23,24 +23,24 @@ last_activity_desc: Phase 18 execution started
 See: .planning/PROJECT.md (updated 2026-08-02)
 
 **Core value:** A single browser tab acts as a fully functional, self-sovereign Cordn coordinator reachable over Nostr relays — no backend, no account, no installation.
-**Current focus:** Phase 18 — Unified Presence, Notifications & Controls
+**Current focus:** Phase 24 — chat-user-interactions
 
 ## Current Position
 
-Phase: 18 (Unified Presence, Notifications & Controls) — EXECUTING
-Plan: 3 of 3
-Status: Phase 18 shipped — PR #8
-Last activity: 2026-08-06
-Pull request: [#7 — maximize room QR codes](https://github.com/sandwichfarm/CAHMLS/pull/7) — open, CI in progress. [#6](https://github.com/sandwichfarm/CAHMLS/pull/6) merged 2026-08-06.
-README refresh: [#16 — rewrite README for CAHMLS](https://github.com/sandwichfarm/CAHMLS/pull/16) — opened 2026-11-04, outside phase scope.
+Phase: 18 — Unified Presence, Notifications & Controls
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-07 — Phase 24 complete, transitioned to Phase 18
+Pull request: [#12 — participant chat interactions](https://github.com/sandwichfarm/CAHMLS/pull/12) — open, CI in progress. [#9](https://github.com/sandwichfarm/CAHMLS/pull/9) merged 2026-08-06.
+README refresh: [#16 — rewrite README for CAHMLS](https://github.com/sandwichfarm/CAHMLS/pull/16) — merged, outside phase scope.
 
-Progress: [██████████░░░░░░░░░░] 3/6 phases ([█████████░] 93%)
+Progress: [██████████░░░░░░░░░░] 3/6 phases ([█████████░] 94%)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 11
+- Total plans completed: 15
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -50,6 +50,7 @@ Progress: [██████████░░░░░░░░░░] 3/6 pha
 |-------|-------|-------|----------|
 | 15 | 3 | - | - |
 | 16 | 6 | 2h+ | - |
+| 24 | 6 | - | - |
 
 **Recent Trend:** No data yet
 
@@ -67,6 +68,11 @@ Progress: [██████████░░░░░░░░░░] 3/6 pha
 | Phase 17-full-viewport-startup-motion P02 | 12min | 2 tasks | 4 files |
 | Phase 18 P01 | 7min | 2 tasks | 5 files |
 | Phase 18 P02 | 10min | 2 tasks | 5 files |
+| Phase 24 P01 | 18 min | 2 tasks | 9 files |
+| Phase 24 P02 | 4 min | 2 tasks | 2 files |
+| Phase 24 P03 | 10 min | 2 tasks | 4 files |
+| Phase 24 P04 | 19 min | 2 tasks | 5 files |
+| Phase 24 P05 | 72min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -96,6 +102,16 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 18] Invitation resolution persists only ID/timestamp for seven days and remains independent from read state.
 - [Phase ?]: Separate the in-app notification feed from desktop permission controls; opening settings stays passive.
 - [Phase ?]: Require a live trusted invitation capability at accept time; persisted feed history remains non-redeemable.
+- [Phase ?]: [Phase 24] Recipient pubkeys are canonicalized and authenticated in kind-9 metadata; invite visibility filters only valid targeted invites before grouping.
+- [Phase ?]: Ignore preferences reuse the authoritative coordinator+room composite identity with a normalized participant suffix.
+- [Phase ?]: Highlights are global by normalized participant pubkey and persist only locked palette symbols.
+- [Phase ?]: Kind-3 identity acceptance requires canonical event-hash equality plus signature verification before deterministic ordering.
+- [Phase ?]: Follow queue captures its originating identity generation and commits only after one relay accepts the signed replacement.
+- [Phase ?]: MessageGroup owns one non-self action menu while panes retain typed composer and room callbacks.
+- [Phase ?]: Ignored disclosure state is keyed after recipient filtering and remains private ephemeral UI state.
+- [Phase ?]: Phase 24 participant menus and choosers pass an explicit 16px gutter, preserving the global overlay default.
+- [Phase ?]: Phase 24 highlight state is rendered from the typed persisted prop with named text, aria-pressed, and a visible selected marker.
+- [Phase ?]: Phase 24 participant and room identifiers are excluded from affected DOM IDs while focus restoration remains pane-local.
 
 ### Pending Todos
 
@@ -130,6 +146,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-03T06:19:49.123Z
-Stopped at: Completed 18-02-PLAN.md
+Last session: 2026-08-06T22:12:55.361Z
+Stopped at: Completed 24-05-PLAN.md
 Resume file: None

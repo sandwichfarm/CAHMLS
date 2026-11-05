@@ -130,6 +130,7 @@ Plans:
 **Plans**: 1 plan
 
 - [x] 19-01-PLAN.md — Deliver one ownership-aware grouped renderer with adaptive timestamps and retained reaction interoperability.
+
 **UI hint**: yes
 
 ### Phase 20: Delivery Contract & Regression Proof
@@ -169,6 +170,7 @@ Plans:
 - [ ] 21-03-PLAN.md — Deliver identity-first onboarding, authenticated prefill, anonymous continuity, and autostart gating.
 - [ ] 21-04-PLAN.md — Persist and immediately republish settings renames with truthful restart status.
 - [ ] 21-05-PLAN.md — Verify live canonical cordn.net name resolution before and after rename/restart.
+
 **UI hint**: yes
 
 ### Phase 22: Coordinator-Grouped Sidebar
@@ -212,6 +214,32 @@ Plans:
 
 **UI hint**: no
 
+### Phase 24: Chat User Interactions
+
+**Goal**: Participants can address, personalize, moderate, invite, and follow people directly from the encrypted conversation without leaking targeted invite presentation to unrelated viewers.
+**Depends on**: Phase 19, Phase 22
+**Requirements**: USER-01, MENTION-01, MENTION-02, INVMSG-01, IGNORE-01, INVUSER-01, FOLLOW-01, FOLLOW-02, HILITE-01
+**Success Criteria** (what must be TRUE):
+
+  1. Every non-self author exposes one accessible context menu whose mention, ignore, invite, follow, and highlight actions work identically in host and invitee chat surfaces.
+  2. Signed kind-9 `p` tags drive mention emphasis and targeted invite visibility while legacy untagged invites remain visible to everyone.
+  3. Ignored consecutive message streaks collapse per exact room into reversible summaries, and participant highlight colors survive reload without changing shared message data.
+  4. In-room invite targeting lets a viewer select another active room and sends its current invite only as a presentation-targeted message for the chosen participant.
+  5. The active identity loads and live-maintains only the newest valid self-authored kind-3 event, and follow publication safely preserves its prior contact-list data.
+
+**Plans**: 5/5 plans executed
+
+Plans:
+
+- [x] 24-05-PLAN.md
+
+- [x] 24-01-PLAN.md — Prove signed kind-9 recipient metadata through send/decrypt and shared viewer-aware presentation.
+- [x] 24-02-PLAN.md — Add strict exact-room ignore and global highlight preference contracts with the composite-room invariant.
+- [x] 24-03-PLAN.md — Own validated live kind-3 state and serialize lossless relay-accepted follow publication.
+- [x] 24-04-PLAN.md — Deliver the shared participant menu, targeted room invites, disclosures, follow feedback, highlights, and UI proof.
+
+**UI hint**: yes
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -225,3 +253,4 @@ Plans:
 | 21. First-Run Coordinator Identity & Profile | 0/TBD | Not started | - |
 | 22. Coordinator-Grouped Sidebar | 2/2 | Complete | 2026-08-06 |
 | 23. Bounded Gift-Wrap Delivery | 2/2 | Complete | 2026-08-06 |
+| 24. Chat User Interactions | 6/6 | Complete    | 2026-08-07 |

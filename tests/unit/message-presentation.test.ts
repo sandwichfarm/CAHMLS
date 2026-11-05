@@ -1,9 +1,28 @@
 import { describe, expect, test } from "vitest";
-import { groupMessageStreaks, nextRelativeMessageTimeDelay, relativeMessageTime } from "../../src/chat/message-presentation";
+import { createInviteUrl } from "../../src/chat/invite";
+import { groupMessageStreaks, nextRelativeMessageTimeDelay, projectMessageStreaks, relativeMessageTime } from "../../src/chat/message-presentation";
 import type { StoredMessage } from "../../src/chat/room-store";
 
 function message(id: string, sender: string, createdAt = 0): StoredMessage {
   return { type: "message", id, sender, name: sender, content: id, createdAt };
+}
+
+const alice = "a".repeat(64);
+const bob = "b".repeat(64);
+const carol = "c".repeat(64);
+const inviteContent = createInviteUrl("https://chat.example", {
+  groupId: "projection-room",
+  coordinatorPubkey: alice,
+  relayUrls: ["wss://relay.example"],
+  title: "Projection room",
+});
+
+function inviteMessage(id: string, sender: string, recipientPubkeys?: string[]): StoredMessage {
+  return {
+    ...message(id, sender),
+    content: inviteContent,
+    ...(recipientPubkeys ? { recipientPubkeys } : {}),
+  };
 }
 
 describe("message presentation", () => {
@@ -26,6 +45,44 @@ describe("message presentation", () => {
       expect.objectContaining({ id: "b1" }),
     ]);
     expect(new Set(groups.flatMap((group) => group.messages.map(({ id }) => id))).size).toBe(2);
+  });
+
+  test("keeps public invites and ordinary tagged messages visible to every viewer", () => {
+    const ordinaryTagged = { ...message("ordinary", alice), recipientPubkeys: [bob] };
+    const visible = projectMessageStreaks([inviteMessage("public", alice), ordinaryTagged], carol);
+
+    expect(visible.flatMap((group) => group.messages.map(({ id }) => id))).toEqual(["public", "ordinary"]);
+  });
+
+  test("removes only valid targeted invites before grouping and preserves adjacency", () => {
+    const messages = [
+      message("before", alice),
+      inviteMessage("hidden", alice, [bob]),
+      message("after", alice),
+    ];
+
+    expect(projectMessageStreaks(messages, carol)).toEqual([{
+      sender: alice,
+      messages: [messages[0], messages[2]],
+    }]);
+    expect(projectMessageStreaks(messages, bob)[0]?.messages.map(({ id }) => id)).toEqual(["before", "hidden", "after"]);
+  });
+
+  test("treats malformed invite text and malformed recipients as ordinary legacy content", () => {
+    const malformedInvite = { ...message("malformed-invite", alice), content: `${inviteContent} trailing`, recipientPubkeys: [bob] };
+    const malformedRecipient = inviteMessage("malformed-recipient", alice, ["not-a-pubkey"]);
+
+    expect(projectMessageStreaks([malformedInvite, malformedRecipient], carol)
+      .flatMap((group) => group.messages.map(({ id }) => id))).toEqual(["malformed-invite", "malformed-recipient"]);
+    expect(projectMessageStreaks([], carol)).toEqual([]);
+  });
+
+  test("deduplicates before filtering while retaining chronological winner order", () => {
+    const pending = { ...inviteMessage("duplicate", alice, [bob]), pending: true };
+    const confirmed = { ...inviteMessage("duplicate", alice, [bob]), cursor: 5, pending: false };
+    const groups = projectMessageStreaks([pending, message("public", carol), confirmed], carol);
+
+    expect(groups.flatMap((group) => group.messages.map(({ id }) => id))).toEqual(["public"]);
   });
 
   test.each([

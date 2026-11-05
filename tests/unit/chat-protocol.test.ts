@@ -12,6 +12,7 @@ import {
   groupId,
   hasValidChatEnvelopeAuth,
   joinWelcome,
+  normalizeRecipientPubkeys,
   signChatEnvelope,
 } from "../../src/chat/protocol";
 
@@ -173,5 +174,69 @@ describe("Feature: encrypted ad-hoc chat", () => {
     ]) {
       expect(hasValidChatEnvelopeAuth(forged as typeof signedReaction)).toBe(false);
     }
+  });
+
+  test("Scenario: signed recipient metadata is canonical, authenticated, and survives MLS", async () => {
+    const hostSigner = new BrowserNostrSigner(generateSecretKey());
+    const guestSigner = new BrowserNostrSigner(generateSecretKey());
+    const hostKey = await createKeyPackage(await hostSigner.getPublicKey());
+    const guestKey = await createKeyPackage(await guestSigner.getPublicKey());
+    const hostState = await createRoomState(hostKey.keyPackage, hostKey.privateKeyPackage);
+    const admitted = await addMember(hostState, guestKey.stored.publicBase64);
+    const guestState = await joinWelcome(admitted.welcomeBase64, guestKey.stored);
+    const hostPubkey = await hostSigner.getPublicKey();
+    const guestPubkey = await guestSigner.getPublicKey();
+
+    expect(normalizeRecipientPubkeys([
+      hostPubkey.toUpperCase(), guestPubkey, hostPubkey, "not-a-pubkey", 42,
+    ])).toEqual([hostPubkey, guestPubkey]);
+    expect(normalizeRecipientPubkeys([])).toEqual([]);
+    expect(normalizeRecipientPubkeys(hostPubkey)).toEqual([]);
+
+    const signed = await signChatEnvelope({
+      type: "message",
+      id: "recipient-metadata",
+      sender: guestPubkey,
+      name: "River",
+      content: "@Ada, can you see this?",
+      createdAt: 6_000,
+      recipientPubkeys: [hostPubkey.toUpperCase(), guestPubkey, hostPubkey],
+    }, guestSigner);
+
+    expect(signed.recipientPubkeys).toEqual([hostPubkey, guestPubkey]);
+    expect(chatEnvelopeToCordnEvent(signed).tags).toEqual(expect.arrayContaining([
+      ["p", hostPubkey], ["p", guestPubkey],
+    ]));
+    expect(hasValidChatEnvelopeAuth(signed)).toBe(true);
+    expect(hasValidChatEnvelopeAuth({
+      ...signed,
+      recipientPubkeys: [guestPubkey, hostPubkey],
+    })).toBe(false);
+
+    const encrypted = await encryptMessage(guestState, signed);
+    const received = await decryptMessage(admitted.state, encrypted.opaqueBase64);
+    expect(received.envelope).toMatchObject({ recipientPubkeys: [hostPubkey, guestPubkey] });
+    expect(hasValidChatEnvelopeAuth(received.envelope!)).toBe(true);
+
+    const signedReaction = await signChatEnvelope({
+      type: "message",
+      id: "recipient-reaction",
+      sender: guestPubkey,
+      name: "River",
+      content: "Reacted 👍",
+      createdAt: 7_000,
+      recipientPubkeys: [hostPubkey],
+      reaction: {
+        targetMessageId: "recipient-metadata",
+        targetPubkey: hostPubkey,
+        targetKind: 9,
+        emoji: "👍",
+        active: true,
+      },
+    }, guestSigner);
+    expect(signedReaction).not.toHaveProperty("recipientPubkeys");
+    expect(chatEnvelopeToCordnEvent(signedReaction).tags).toEqual(expect.arrayContaining([
+      ["e", "recipient-metadata", "", hostPubkey], ["p", hostPubkey], ["k", "9"],
+    ]));
   });
 });

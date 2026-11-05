@@ -1,10 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import HostWorkspace from "./components/HostWorkspace.svelte";
+  import MessageGroupTestHarness from "./components/MessageGroupTestHarness.svelte";
   import PassphrasePrompt from "./components/PassphrasePrompt.svelte";
   import { configStore } from "./config/config.svelte";
   import { coordinatorStore } from "./coordinator/coordinator.svelte";
   import { userProfileStore } from "./identity/user-profile.svelte";
+  import { nostrSocialStore } from "./invites/nostr-social.svelte";
   import {
     initialWorkspaceIntent,
     isLegacyChatIndexPath,
@@ -13,6 +15,10 @@
   } from "./navigation/workspace-route";
 
   const shellOrigin = window.location.origin;
+  const initialSearchParams = new URL(window.location.href).searchParams;
+  const e2eBuild = import.meta.env.VITE_E2E === "1";
+  const messageGroupTestHarness = e2eBuild && initialSearchParams.has("__message-group-test-harness");
+  const messageGroupTestHarnessPane = initialSearchParams.get("pane") === "host" ? "host" : "guest";
   const rootUrl = new URL("/", shellOrigin).href;
   const initialIntent = initialWorkspaceIntent(window.location.href, window.history.state, shellOrigin);
   let currentUrl = $state(initialIntent ?? rootUrl);
@@ -22,12 +28,30 @@
     coordinatorStore.loadState === "ready" ? coordinatorStore.identity.publicKeyHex : undefined,
   );
   const identityReady = $derived(userProfileStore.initialized);
+  const e2eContactFollowing = $derived([...nostrSocialStore.following].sort());
+  const e2eContactOwnerReady = $derived(
+    nostrSocialStore.contactPubkey.length > 0 && nostrSocialStore.contactStatus !== "idle",
+  );
   const emptyIdentity = { publicKeyHex: "", npub: "" };
 
   canonicalize(initialIntent);
 
   $effect(() => {
     void userProfileStore.initialize(configStore.userName);
+  });
+
+  $effect(() => {
+    const signer = userProfileStore.activeSigner;
+    const authenticated = userProfileStore.initialized
+      && userProfileStore.method !== "anonymous"
+      && signer !== null
+      && userProfileStore.pubkey.length > 0;
+    if (!authenticated || !signer) {
+      nostrSocialStore.stopContactList();
+      return;
+    }
+    void nostrSocialStore.startContactList(signer);
+    return () => nostrSocialStore.stopContactList();
   });
 
   function canonicalize(intent: string | null): void {
@@ -69,7 +93,9 @@
   });
 </script>
 
-{#if coordinatorStore.loadState === "prompting" && !lockedWorkspaceOpen && !hasWorkspaceIntent}
+{#if messageGroupTestHarness}
+  <MessageGroupTestHarness pane={messageGroupTestHarnessPane} />
+{:else if coordinatorStore.loadState === "prompting" && !lockedWorkspaceOpen && !hasWorkspaceIntent}
   <PassphrasePrompt
     coordinator={coordinatorStore}
     onOpenChats={() => lockedWorkspaceOpen = true}
@@ -89,4 +115,16 @@
       onNavigate={navigate}
     />
   {/key}
+{/if}
+
+{#if e2eBuild}
+  <output
+    hidden
+    aria-hidden="true"
+    data-testid="contact-lifecycle-probe"
+    data-contact-pubkey={nostrSocialStore.contactPubkey}
+    data-contact-status={nostrSocialStore.contactStatus}
+    data-following={e2eContactFollowing.join(",")}
+    data-owner-ready={e2eContactOwnerReady ? "true" : "false"}
+  >contact-lifecycle-probe</output>
 {/if}

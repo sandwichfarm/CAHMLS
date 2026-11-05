@@ -45,7 +45,7 @@
   $effect(() => {
     const signer = userProfileStore.activeSigner;
     if (userProfileStore.method === "anonymous" || !signer) {
-      nostrSocialStore.disconnect();
+      nostrSocialStore.disconnectPresence();
       return;
     }
     void nostrSocialStore.connect(signer, config.presenceState, {

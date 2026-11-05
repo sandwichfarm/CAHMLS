@@ -1,13 +1,57 @@
 import type { StoredMessage } from "./room-store";
+import { parseInviteMessage } from "./invite";
+import { normalizeRecipientPubkeys } from "./protocol";
 
 export interface MessageStreak {
   sender: string;
   messages: StoredMessage[];
 }
 
+/** A stable, post-visibility streak projection suitable for private UI state. */
+export interface MessagePresentationEntry extends MessageStreak {
+  instanceKey: string;
+  ignored: boolean;
+}
+
 export function groupMessageStreaks(messages: readonly StoredMessage[]): MessageStreak[] {
+  return groupConsecutiveMessages(uniqueRenderableMessages(messages));
+}
+
+/**
+ * Select a viewer's complete renderable message sequence before any layout is
+ * formed. Targeting is a local invite UX rule: ordinary messages are always
+ * visible, while valid tagged invites disappear for non-recipients.
+ */
+export function projectMessageStreaks(messages: readonly StoredMessage[], viewerPubkey: string): MessageStreak[] {
+  const viewer = normalizeRecipientPubkeys([viewerPubkey])[0];
+  const visible = uniqueRenderableMessages(messages).filter((message) => {
+    if (!parseInviteMessage(message.content)) return true;
+    const recipients = normalizeRecipientPubkeys(message.recipientPubkeys);
+    return recipients.length === 0 || (viewer !== undefined && recipients.includes(viewer));
+  });
+  return groupConsecutiveMessages(visible);
+}
+
+/**
+ * Apply private participant preferences only after target filtering has formed
+ * the visible sequence. This keeps collapsed ignore disclosures from
+ * resurrecting a non-target invite or joining independent visible streaks.
+ */
+export function projectMessagePresentation(
+  messages: readonly StoredMessage[],
+  viewerPubkey: string,
+  isIgnored: (participantPubkey: string) => boolean,
+): MessagePresentationEntry[] {
+  return projectMessageStreaks(messages, viewerPubkey).map((streak) => ({
+    ...streak,
+    instanceKey: `${streak.sender}:${streak.messages[0]?.id ?? ""}`,
+    ignored: isIgnored(streak.sender),
+  }));
+}
+
+function groupConsecutiveMessages(messages: readonly StoredMessage[]): MessageStreak[] {
   const streaks: MessageStreak[] = [];
-  for (const message of uniqueRenderableMessages(messages)) {
+  for (const message of messages) {
     const current = streaks.at(-1);
     if (current?.sender === message.sender) current.messages.push(message);
     else streaks.push({ sender: message.sender, messages: [message] });

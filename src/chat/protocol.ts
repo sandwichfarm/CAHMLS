@@ -70,12 +70,36 @@ export interface ChatEnvelope {
   badgeEmoji?: string;
   content: string;
   createdAt: number;
+  /** Optional authenticated kind-9 recipients used for mentions and targeted invites. */
+  recipientPubkeys?: string[];
   /** Optional so pre-reaction clients still advance MLS state using `type: message`. */
   reaction?: ChatReactionMutation;
   auth?: {
     id: string;
     sig: string;
   };
+}
+
+/** Accept arrays of Nostr pubkeys only; presentation text never establishes identity. */
+export function normalizeRecipientPubkeys(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const recipients: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of value) {
+    if (typeof candidate !== "string" || !/^[0-9a-f]{64}$/i.test(candidate)) continue;
+    const pubkey = candidate.toLowerCase();
+    if (seen.has(pubkey)) continue;
+    seen.add(pubkey);
+    recipients.push(pubkey);
+  }
+  return recipients;
+}
+
+function hasCanonicalRecipientPubkeys(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value)) return false;
+  const normalized = normalizeRecipientPubkeys(value);
+  return normalized.length === value.length && normalized.every((pubkey, index) => pubkey === value[index]);
 }
 
 export interface LocalKeyPackage {
@@ -235,6 +259,7 @@ export async function encryptMessage(state: ClientState, envelope: ChatEnvelope)
     delete safeEnvelope.auth;
     delete safeEnvelope.badgeLabel;
     delete safeEnvelope.badgeEmoji;
+    delete safeEnvelope.recipientPubkeys;
     wireEnvelope = safeEnvelope;
   }
   const event = finalizeCordnMessageEvent(chatEnvelopeToCordnEvent(wireEnvelope));
@@ -253,8 +278,11 @@ export async function encryptMessage(state: ClientState, envelope: ChatEnvelope)
 
 /** Sign all user-controlled presentation fields without embedding a full Nostr event. */
 export async function signChatEnvelope(envelope: ChatEnvelope, signer: NostrSigner): Promise<ChatEnvelope> {
-  const canonicalId = finalizeCordnMessageEvent(chatEnvelopeToCordnEvent(envelope)).id;
-  const canonicalEnvelope = { ...envelope, id: canonicalId };
+  const canonicalEnvelope = { ...envelope };
+  const recipientPubkeys = envelope.reaction ? [] : normalizeRecipientPubkeys(envelope.recipientPubkeys);
+  if (recipientPubkeys.length > 0) canonicalEnvelope.recipientPubkeys = recipientPubkeys;
+  else delete canonicalEnvelope.recipientPubkeys;
+  canonicalEnvelope.id = finalizeCordnMessageEvent(chatEnvelopeToCordnEvent(canonicalEnvelope)).id;
   const signed = await signer.signEvent(chatEnvelopeAuthTemplate(canonicalEnvelope));
   const authenticated = { ...canonicalEnvelope, auth: { id: signed.id, sig: signed.sig } };
   if (signed.pubkey !== envelope.sender || !hasValidChatEnvelopeAuth(authenticated)) {
@@ -270,7 +298,9 @@ export async function signChatEnvelope(envelope: ChatEnvelope, signer: NostrSign
  */
 export function hasValidChatEnvelopeAuth(envelope: ChatEnvelope): boolean {
   if (!envelope.auth || !/^[0-9a-f]{64}$/i.test(envelope.sender)
-    || (envelope.reaction !== undefined && !isChatReactionMutation(envelope.reaction))) return false;
+    || !hasCanonicalRecipientPubkeys(envelope.recipientPubkeys)
+    || (envelope.reaction !== undefined && (!isChatReactionMutation(envelope.reaction)
+      || envelope.recipientPubkeys !== undefined))) return false;
   if (envelope.auth.sig === "cordn") {
     return envelope.id === envelope.auth.id
       && finalizeCordnMessageEvent(chatEnvelopeToCordnEvent(envelope)).id === envelope.id;
@@ -349,6 +379,10 @@ export function chatEnvelopeToCordnEvent(envelope: ChatEnvelope): UnsignedEvent 
     if (envelope.reaction.targetPubkey) tags.push(["p", envelope.reaction.targetPubkey]);
     if (envelope.reaction.targetKind !== undefined) tags.push(["k", String(envelope.reaction.targetKind)]);
     tags.push(["cahmls-active", envelope.reaction.active ? "1" : "0"]);
+  } else {
+    for (const recipientPubkey of normalizeRecipientPubkeys(envelope.recipientPubkeys)) {
+      tags.push(["p", recipientPubkey]);
+    }
   }
   return {
     pubkey: envelope.sender,
@@ -401,7 +435,14 @@ function cordnEventToChatEnvelope(event: CordnMessageEvent): ChatEnvelope | unde
     createdAt: event.created_at * 1_000,
     auth: { id: event.id, sig: "cordn" },
   };
-  if (event.kind !== 7) return event.kind === 9 ? base : undefined;
+  if (event.kind !== 7) {
+    const recipientPubkeys = normalizeRecipientPubkeys(event.tags
+      .filter((tag) => tag[0] === "p")
+      .map((tag) => tag[1]));
+    return event.kind === 9
+      ? { ...base, ...(recipientPubkeys.length > 0 ? { recipientPubkeys } : {}) }
+      : undefined;
+  }
   const targetMessageId = tagValue(event.tags, "e");
   if (!targetMessageId || !(CHAT_EMOJI_SHORTCUTS as readonly string[]).includes(event.content)) {
     return undefined;
@@ -436,6 +477,7 @@ function chatEnvelopeAuthTemplate(envelope: ChatEnvelope): EventTemplate {
       badgeEmoji: envelope.badgeEmoji ?? null,
       content: envelope.content,
       createdAt: envelope.createdAt,
+      recipientPubkeys: envelope.reaction ? null : (envelope.recipientPubkeys ?? null),
       reaction: envelope.reaction ?? null,
     }),
   };
