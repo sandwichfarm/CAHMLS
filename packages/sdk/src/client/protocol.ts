@@ -75,6 +75,11 @@ export interface ChatEnvelope {
   auth?: {
     id: string;
     sig: string;
+    /**
+     * Original tags of a received Cordn event, kept when they cannot be rebuilt
+     * from this envelope. Foreign clients may omit or reorder tags.
+     */
+    tags?: string[][];
   };
 }
 
@@ -271,11 +276,10 @@ export async function signChatEnvelope(envelope: ChatEnvelope, signer: NostrSign
 export function hasValidChatEnvelopeAuth(envelope: ChatEnvelope): boolean {
   if (!envelope.auth || !/^[0-9a-f]{64}$/i.test(envelope.sender)
     || (envelope.reaction !== undefined && !isChatReactionMutation(envelope.reaction))) return false;
-  if (envelope.auth.sig === "cordn") {
-    return envelope.id === envelope.auth.id
-      && finalizeCordnMessageEvent(chatEnvelopeToCordnEvent(envelope)).id === envelope.id;
-  }
   try {
+    if (envelope.auth.sig === "cordn") {
+      return envelope.id === envelope.auth.id && hasValidCordnProof(envelope);
+    }
     const event: NostrEvent = {
       ...chatEnvelopeAuthTemplate(envelope),
       pubkey: envelope.sender,
@@ -286,6 +290,22 @@ export function hasValidChatEnvelopeAuth(envelope: ChatEnvelope): boolean {
   } catch {
     return false;
   }
+}
+
+function hasValidCordnProof(envelope: ChatEnvelope): boolean {
+  const rebuilt = chatEnvelopeToCordnEvent(envelope);
+  const originalTags = envelope.auth?.tags;
+  if (!originalTags) return finalizeCordnMessageEvent(rebuilt).id === envelope.id;
+  // The hash covers the original tags, so the presentation must be what they decode to.
+  const original = finalizeCordnMessageEvent({ ...rebuilt, tags: originalTags });
+  if (original.id !== envelope.id) return false;
+  const decoded = cordnEventToChatEnvelope(original);
+  return decoded !== undefined
+    && decoded.name === envelope.name
+    && decoded.avatar === envelope.avatar
+    && decoded.badgeLabel === envelope.badgeLabel
+    && decoded.badgeEmoji === envelope.badgeEmoji
+    && JSON.stringify(decoded.reaction) === JSON.stringify(envelope.reaction);
 }
 
 /** Remove invalid proofs and role presentation not signed by the MLS-verified host. */
@@ -299,7 +319,7 @@ export function sanitizeChatEnvelopeHostBadge<T extends ChatEnvelope>(envelope: 
   const sanitized = { ...envelope };
   // The signature covers the badge fields. Once role presentation is removed,
   // its proof no longer describes the returned envelope and must go with it.
-  if (!authenticated || stripsBadge) delete sanitized.auth;
+  delete sanitized.auth;
   if (stripsBadge) {
     delete sanitized.badgeLabel;
     delete sanitized.badgeEmoji;
@@ -310,10 +330,30 @@ export function sanitizeChatEnvelopeHostBadge<T extends ChatEnvelope>(envelope: 
 export async function decryptMessage(state: ClientState, opaqueBase64: string, options: { expectedHostPubkey?: string } = {}): Promise<{ state: ClientState; envelope?: ChatEnvelope }> {
   const serialized = await unsealGroupPayloadBase64(state, opaqueBase64);
   const message = decodeExact(base64ToBytes(serialized), mlsMessageDecoder, "MLS message");
+  if (message.wireformat !== wireformats.mls_private_message
+    && message.wireformat !== wireformats.mls_public_message) {
+    throw new Error("Invalid MLS message");
+  }
+  const suite = await cipherSuite();
+  let signingKey: Uint8Array | null = null;
   const result = await processMessage({
-    context: { cipherSuite: await cipherSuite(), authService: unsafeTestingAuthenticationService },
+    context: {
+      // ts-mls does not report which member sent a message, but it verifies the
+      // signature with that member's leaf key. Observe the key that verified.
+      cipherSuite: {
+        ...suite,
+        signature: {
+          ...suite.signature,
+          verify: async (publicKey, content, signature) => {
+            signingKey = publicKey;
+            return suite.signature.verify(publicKey, content, signature);
+          },
+        },
+      },
+      authService: unsafeTestingAuthenticationService,
+    },
     state,
-    // The welcome form is rejected above; ts-mls' discriminator is not
+    // Non-framed forms are rejected above; ts-mls' discriminator is not
     // currently narrowed by TypeScript across its numeric wireformat field.
     message: message as Parameters<typeof processMessage>[0]["message"],
   });
@@ -322,12 +362,35 @@ export async function decryptMessage(state: ClientState, opaqueBase64: string, o
   const sender = textDecoder.decode(result.aad);
   const event = decodeCordnMessageEvent(result.message);
   if (event.pubkey !== sender) throw new Error("Cordn message sender does not match MLS authenticated data");
+  // Authenticated data is chosen by the sender, so it proves nothing by itself.
+  if (memberIdentityForSigningKey(state, signingKey) !== sender) {
+    throw new Error("Cordn message sender does not match its MLS credential");
+  }
   const candidate = cordnEventToChatEnvelope(event);
   if (!candidate) return { state: result.newState };
+  if (finalizeCordnMessageEvent(chatEnvelopeToCordnEvent(candidate)).id !== event.id) {
+    candidate.auth = { id: event.id, sig: "cordn", tags: event.tags };
+  }
   return {
     state: result.newState,
     envelope: sanitizeChatEnvelopeHostBadge(candidate, options.expectedHostPubkey),
   };
+}
+
+/** The BasicCredential identity of the group member with this signature key. */
+function memberIdentityForSigningKey(state: ClientState, signingKey: Uint8Array | null): string | null {
+  const member = signingKey && getGroupMembers(state).find((leaf) => equalBytes(leaf.signaturePublicKey, signingKey));
+  /* v8 ignore next -- ts-mls reads the verifying key from a member leaf; this fails closed if that changes */
+  if (!member) return null;
+  const credential = member.credential;
+  if (!isDefaultCredential(credential)
+    || credential.credentialType !== defaultCredentialTypes.basic
+    || !("identity" in credential)) return null;
+  return textDecoder.decode(credential.identity).trim();
+}
+
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return left.length === right.length && left.every((byte, index) => byte === right[index]);
 }
 
 type CordnMessageEvent = UnsignedEvent & { id: string };

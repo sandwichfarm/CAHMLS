@@ -43,7 +43,7 @@ Rooms depend on the `ChatCoordinatorOperations` interface, which has two impleme
 1. A sender encrypts an MLS application message, seals it with the group's exporter secret, and adds it to `room.pending`.
 2. The room is persisted before any network call, so a reload can retry delivery.
 3. The session posts the opaque payload and receives its cursor.
-4. Each sync fetches everything after `room.lastCursor` and decrypts it in order, skipping the session's own posts.
+4. Each sync fetches everything after `room.lastCursor` and decrypts it in order, skipping the session's own posts. A message is rejected if its claimed sender does not match the MLS credential that signed it.
 
 `lastCursor` moves only after a fetch. Advancing it when a post returns would skip messages other members sent in the meantime.
 

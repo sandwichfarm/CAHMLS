@@ -148,11 +148,7 @@ export class KeyStorage {
 
     try {
       return await decryptPersistedBlob(parsePersistedBlob(raw), passphrase);
-    } catch (error) {
-      if (error instanceof WrongPassphraseError) {
-        throw error;
-      }
-
+    } catch {
       throw new WrongPassphraseError();
     }
   }
@@ -189,11 +185,7 @@ export class KeyStorage {
         },
         encryptedKey,
       };
-    } catch (error) {
-      if (error instanceof WrongPassphraseError) {
-        throw error;
-      }
-
+    } catch {
       throw new WrongPassphraseError();
     } finally {
       decryptedKey?.fill(0);

@@ -14,11 +14,14 @@ A coordinator stores MLS ciphertext, KeyPackages, Welcomes, and routing metadata
 ## Authentication
 
 ::: warning
-MLS credentials are not verified against an external identity service. The SDK uses `ts-mls`'s `unsafeTestingAuthenticationService`, so group membership does not by itself prove who controls a Nostr key. Application messages carry `sender` in MLS authenticated data, and CAHMLS-signed envelopes are verified with `hasValidChatEnvelopeAuth()`.
+MLS credentials are not verified against an external identity service. The SDK uses `ts-mls`'s `unsafeTestingAuthenticationService`, so group membership does not by itself prove who controls a Nostr key.
 :::
+
+`decryptMessage()` rejects any application message whose claimed sender differs from the MLS credential of the member that signed it. Within a group, a sender therefore cannot claim another member's key, but a member can choose which key their own credential names when joining.
 
 Do not trust display names, avatars, or badges in an envelope without checking it:
 
+- `hasValidChatEnvelopeAuth()` verifies that an envelope's presentation fields are covered by its proof.
 - `sanitizeChatEnvelopeHostBadge()` removes role badges not signed by the verified host.
 - `reconcileRoomHostIdentity()` keeps host details only when they match the creator key in MLS state.
 - `requireRoomSigner()` rejects signers that do not own the room's identity.

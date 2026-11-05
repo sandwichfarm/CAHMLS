@@ -18,30 +18,9 @@ function decodeUint16(bytes: Uint8Array, offset: number): number {
   return (bytes[offset]! << 8) | bytes[offset + 1]!;
 }
 
+/** Only ever encodes the short constant below, so the one-byte varint form suffices. */
 function encodeVarBytes(bytes: Uint8Array): Uint8Array {
-  if (bytes.length < 64) {
-    return Uint8Array.from([bytes.length, ...bytes]);
-  }
-
-  if (bytes.length < 16_384) {
-    return Uint8Array.from([
-      0x40 | ((bytes.length >> 8) & 0x3f),
-      bytes.length & 0xff,
-      ...bytes,
-    ]);
-  }
-
-  if (bytes.length < 1_073_741_824) {
-    return Uint8Array.from([
-      0x80 | ((bytes.length >> 24) & 0x3f),
-      (bytes.length >> 16) & 0xff,
-      (bytes.length >> 8) & 0xff,
-      bytes.length & 0xff,
-      ...bytes,
-    ]);
-  }
-
-  throw new Error("App data dictionary entry is too large");
+  return Uint8Array.from([bytes.length, ...bytes]);
 }
 
 function decodeVarBytes(
@@ -53,6 +32,11 @@ function decodeVarBytes(
   }
 
   const firstByte = bytes[offset]!;
+  // RFC 9420 2.1.2 reserves prefix 0b11. Reading it as an 8-byte length would
+  // overflow int32 and could rewind the caller's offset into an endless loop.
+  if ((firstByte & 0xc0) === 0xc0) {
+    throw new Error("Invalid varint prefix in app data dictionary");
+  }
   const lengthFieldSize = 1 << ((firstByte & 0xc0) >> 6);
   if (offset + lengthFieldSize > bytes.length) {
     throw new Error("Unexpected end of app data dictionary length");

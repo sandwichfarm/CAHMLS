@@ -140,6 +140,7 @@ function decodeCoordinator(value: string | null): { pubkey: string; relayUrls: s
     if (decoded.type === "nprofile") {
       return {
         pubkey: decoded.data.pubkey.toLowerCase(),
+        /* v8 ignore next -- nip19.decode always sets relays; only its type marks them optional */
         relayUrls: normalizeRelayUrls(decoded.data.relays ?? []),
       };
     }
@@ -249,5 +250,8 @@ export function parseInviteUrl(value: string): ChatInvite | null {
 export function parseInviteMessage(value: string): ChatInvite | null {
   const candidate = value.trim();
   if (!candidate || /\s/.test(candidate)) return null;
+  // parseInviteUrl resolves relative input for the address bar, but chat text
+  // such as "chat/hello" must not turn into a join card for the default host.
+  if (!/^https?:\/\//i.test(candidate)) return null;
   return parseInviteUrl(candidate);
 }

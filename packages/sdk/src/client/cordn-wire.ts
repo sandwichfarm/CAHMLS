@@ -36,6 +36,8 @@ function encodeUint16(value: number): Uint8Array {
 }
 
 function encodeField(bytes: Uint8Array): Uint8Array {
+  // The uint16 prefix would silently wrap and corrupt every following field.
+  if (bytes.length > 0xffff) throw new Error("Cordn metadata field is too long");
   return new Uint8Array([...encodeUint16(bytes.length), ...bytes]);
 }
 
