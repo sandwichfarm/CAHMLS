@@ -264,7 +264,6 @@ export class ChatRoomSession {
 
   private attachSteadyState(generation: number): void {
     this.detachSteadyState();
-    if (this.stopped || generation !== this.lifecycleGeneration) return;
     if (this.room.isHost && this.client?.subscribeJoinRequests) {
       this.joinRequestUnsubscribe = this.client.subscribeJoinRequests(
         this.room.id,
@@ -334,7 +333,7 @@ export class ChatRoomSession {
         badgeLabel: this.room.badgeLabel,
         badgeEmoji: this.room.badgeEmoji,
         content: trimmed,
-        createdAt: Date.now(),
+        createdAt: this.nextMessageTimestamp(trimmed),
       }, this.signer);
       const encrypted = await encryptMessage(decodeState(this.room.stateBase64), event);
       this.room.stateBase64 = encodeState(encrypted.state);
@@ -347,53 +346,58 @@ export class ChatRoomSession {
   }
 
   async setReaction(targetMessageId: string, emoji: ChatEmojiShortcut, active: boolean): Promise<void> {
-    await this.runExclusive(async () => {
-      if (this.stopped || this.status.connection !== "connected") {
-        throw new Error("The coordinator must be connected before you can react");
-      }
-      if (this.room.joinRequestSent) throw new Error("Wait for the host to admit you before reacting");
-      const targetMessage = this.room.messages.find((message) => message.id === targetMessageId);
-      if (!targetMessage) {
-        throw new Error("That message is no longer available for reactions");
-      }
-      if (targetMessage.sender === this.room.stablePubkey) {
-        throw new Error("You cannot react to your own message");
-      }
-      if (!(CHAT_EMOJI_SHORTCUTS as readonly string[]).includes(emoji)) {
-        throw new Error("That emoji is not available as a reaction");
-      }
-      const event = await signChatEnvelope({
-        type: "message",
-        id: crypto.randomUUID(),
-        sender: this.room.stablePubkey,
-        name: this.room.name,
-        avatar: this.room.avatar,
-        badgeLabel: this.room.badgeLabel,
-        badgeEmoji: this.room.badgeEmoji,
-        content: `${active ? "Reacted" : "Removed reaction"} ${emoji}`,
-        createdAt: Date.now(),
-        reaction: {
-          targetMessageId,
-          targetPubkey: targetMessage.sender,
-          targetKind: 9,
-          emoji,
-          active,
-        },
-      }, this.signer);
-      const encrypted = await encryptMessage(decodeState(this.room.stateBase64), event);
-      this.room.stateBase64 = encodeState(encrypted.state);
-      this.applyReaction(event);
-      this.room.pending = [...this.room.pending, { id: event.id, opaqueBase64: encrypted.opaqueBase64 }];
-      this.persist();
-      this.emit();
-      await this.syncOnce();
-    });
+    await this.runExclusive(() => this.publishReaction(targetMessageId, emoji, active));
   }
 
   async toggleReaction(targetMessageId: string, emoji: ChatEmojiShortcut): Promise<void> {
-    const current = reactionSummary(this.room, targetMessageId, this.room.stablePubkey)
-      .find((reaction) => reaction.emoji === emoji);
-    await this.setReaction(targetMessageId, emoji, !current?.viewerActive);
+    // Read the current state inside the queue: an earlier toggle may still be in flight.
+    await this.runExclusive(() => {
+      const current = reactionSummary(this.room, targetMessageId, this.room.stablePubkey)
+        .find((reaction) => reaction.emoji === emoji);
+      return this.publishReaction(targetMessageId, emoji, !current?.viewerActive);
+    });
+  }
+
+  private async publishReaction(targetMessageId: string, emoji: ChatEmojiShortcut, active: boolean): Promise<void> {
+    if (this.stopped || this.status.connection !== "connected") {
+      throw new Error("The coordinator must be connected before you can react");
+    }
+    if (this.room.joinRequestSent) throw new Error("Wait for the host to admit you before reacting");
+    const targetMessage = this.room.messages.find((message) => message.id === targetMessageId);
+    if (!targetMessage) {
+      throw new Error("That message is no longer available for reactions");
+    }
+    if (targetMessage.sender === this.room.stablePubkey) {
+      throw new Error("You cannot react to your own message");
+    }
+    if (!(CHAT_EMOJI_SHORTCUTS as readonly string[]).includes(emoji)) {
+      throw new Error("That emoji is not available as a reaction");
+    }
+    const event = await signChatEnvelope({
+      type: "message",
+      id: crypto.randomUUID(),
+      sender: this.room.stablePubkey,
+      name: this.room.name,
+      avatar: this.room.avatar,
+      badgeLabel: this.room.badgeLabel,
+      badgeEmoji: this.room.badgeEmoji,
+      content: `${active ? "Reacted" : "Removed reaction"} ${emoji}`,
+      createdAt: Date.now(),
+      reaction: {
+        targetMessageId,
+        targetPubkey: targetMessage.sender,
+        targetKind: 9,
+        emoji,
+        active,
+      },
+    }, this.signer);
+    const encrypted = await encryptMessage(decodeState(this.room.stateBase64), event);
+    this.room.stateBase64 = encodeState(encrypted.state);
+    this.applyReaction(event);
+    this.room.pending = [...this.room.pending, { id: event.id, opaqueBase64: encrypted.opaqueBase64 }];
+    this.persist();
+    this.emit();
+    await this.syncOnce();
   }
 
   setIdentity(identity: RoomIdentity): void {
@@ -423,8 +427,10 @@ export class ChatRoomSession {
   async approveJoinRequests(): Promise<void> {
     await this.runExclusive(async () => {
       const client = this.getClient();
-      const requests = this.pendingJoinRequests.length > 0
-        ? [...this.pendingJoinRequests]
+      // The invite may have been rotated since these requests were fetched.
+      const held = this.currentInviteRequests(this.pendingJoinRequests);
+      const requests = held.length > 0
+        ? held
         : this.currentInviteRequests(await client.fetchJoinRequests(this.room.id));
       const result = await this.acceptJoinRequests(client, requests);
       this.recordJoinedGuests(result.accepted);
@@ -455,7 +461,7 @@ export class ChatRoomSession {
     try {
       await operation;
     } finally {
-      if (this.pendingSync === operation) this.pendingSync = null;
+      this.pendingSync = null;
     }
   }
 
@@ -486,7 +492,7 @@ export class ChatRoomSession {
         await this.acceptWelcome(client);
       }
       if (!this.room.isHost && this.room.joinRequestSent) {
-        this.markServerOnline("Waiting for the host to admit you");
+        if (!this.stopped) this.markServerOnline("Waiting for the host to admit you");
         return;
       }
       await this.flushPending(client);
@@ -494,11 +500,13 @@ export class ChatRoomSession {
       if (this.stopped) return;
       this.markServerOnline();
     } catch (error) {
-      this.markServerOffline(error instanceof Error ? error.message : "Coordinator unavailable");
+      // stop() closes the client under an in-flight operation. That failure says
+      // nothing about the coordinator, whose other sessions may be connected.
+      if (!this.stopped) this.markServerOffline(error instanceof Error ? error.message : "Coordinator unavailable");
       await this.client?.close();
       this.client = null;
     } finally {
-      this.persist();
+      this.persistBestEffort();
       this.emit();
     }
   }
@@ -554,6 +562,9 @@ export class ChatRoomSession {
       this.client = null;
       if (!active()) throw new DOMException("Recovery cancelled", "AbortError");
       this.status = { connection: "connecting" };
+      // Posted messages and a consumed Welcome already happened remotely, and the
+      // coordinator may replace this session: they must survive this failed attempt.
+      this.persistBestEffort();
       throw new Error("Hosted room recovery failed", { cause: error });
     }
   }
@@ -692,7 +703,7 @@ export class ChatRoomSession {
           pending.welcomeBase64,
           pending.after,
         );
-        this.room.pendingWelcomes = (this.room.pendingWelcomes ?? []).filter((entry) => entry !== pending);
+        this.room.pendingWelcomes = this.room.pendingWelcomes!.filter((entry) => entry !== pending);
         accepted.push({
           gid: this.room.id,
           pk: pending.requestPk,
@@ -820,7 +831,7 @@ export class ChatRoomSession {
           if (hadEstablishedBaseline
             && hasValidChatEnvelopeAuth(decoded.envelope)
             && decoded.envelope.sender !== this.room.stablePubkey) {
-            this.incrementUnread(message.cursor);
+            this.incrementUnread();
           }
           if (shouldNotify && decoded.envelope.sender !== this.room.stablePubkey) {
             getRoomEnvironment().notifications?.record({
@@ -856,14 +867,14 @@ export class ChatRoomSession {
     this.hasCompletedInitialMessageSync = true;
   }
 
-  private incrementUnread(cursor: number): void {
+  private incrementUnread(): void {
     const previousCount = roomUnreadCount(this.room);
     const unreadCount = saturatingAdd(previousCount, 1);
     if (unreadCount === previousCount) return;
     this.room.readState = {
       version: 1,
       baselineEstablished: true,
-      lastReadCursor: Math.max(safeCursor(this.room.readState?.lastReadCursor), safeCursor(cursor)),
+      lastReadCursor: safeCursor(this.room.readState?.lastReadCursor),
       unreadCount,
     };
     emitUnreadChange(this.room, previousCount, unreadCount);
@@ -872,6 +883,28 @@ export class ChatRoomSession {
   private persist(): void {
     if (!this.persistenceEnabled) return;
     saveRoom(this.room);
+  }
+
+  /** The live room stays authoritative and every later sync retries the write. */
+  private persistBestEffort(): void {
+    try {
+      this.persist();
+    } catch (error) {
+      console.warn("Could not persist room state; will retry", error);
+    }
+  }
+
+  /**
+   * Canonical message ids hash the sender, content and whole-second timestamp, so
+   * repeating a message within one second would collide and recipients would drop it.
+   */
+  private nextMessageTimestamp(content: string): number {
+    const collides = (time: number) => this.room.messages.some((message) => message.sender === this.room.stablePubkey
+      && message.content === content
+      && Math.floor(message.createdAt / 1_000) === Math.floor(time / 1_000));
+    let createdAt = Date.now();
+    while (collides(createdAt)) createdAt += 1_000;
+    return createdAt;
   }
 
   private emit(): void {
@@ -1006,9 +1039,7 @@ export async function signerForStoredRoom(room: StoredRoom): Promise<BrowserNost
   const encoded = room.anonymousSecretKey;
   if (!encoded || !/^[0-9a-f]{64}$/i.test(encoded)) return null;
   try {
-    const secret = hexToBytes(encoded);
-    if (secret.length !== 32) return null;
-    const signer = new BrowserNostrSigner(secret);
+    const signer = new BrowserNostrSigner(hexToBytes(encoded));
     await requireRoomSigner(room, signer);
     return signer;
   } catch {
@@ -1059,7 +1090,6 @@ export async function retireAnonymousMemberships(stablePubkey?: string): Promise
   try {
     for (const entries of matching.values()) {
       const authoritative = entries.find(({ key, room }) => key === roomStorageKey(room.coordinatorPubkey, room.id)) ?? entries[0];
-      if (!authoritative) continue;
       const targetKey = roomStorageKey(authoritative.room.coordinatorPubkey, authoritative.room.id);
       capture(targetKey);
       for (const { key } of entries) capture(key);
@@ -1071,6 +1101,7 @@ export async function retireAnonymousMemberships(stablePubkey?: string): Promise
         stateBase64: "",
         keyPackage: { reference: "", publicBase64: "", privateBase64: "" },
         pending: [],
+        pendingWelcomes: undefined,
         inviteToken: undefined,
         autoApprove: undefined,
         joinRequestSent: undefined,
@@ -1120,14 +1151,13 @@ export async function retireAnonymousMemberships(stablePubkey?: string): Promise
 }
 
 async function belongsToAnonymousMembership(room: StoredRoom, stablePubkey?: string): Promise<boolean> {
+  if (room.membershipStatus === "retired") return false;
   if (room.identityOwner) return room.identityOwner === "anonymous" && (!stablePubkey || room.stablePubkey === stablePubkey);
   if (!stablePubkey) return true;
   const encoded = room.anonymousSecretKey;
   if (!encoded || !/^[0-9a-f]{64}$/i.test(encoded)) return false;
   try {
-    const secret = hexToBytes(encoded);
-    if (secret.length !== 32) return false;
-    return await new BrowserNostrSigner(secret).getPublicKey() === stablePubkey;
+    return await new BrowserNostrSigner(hexToBytes(encoded)).getPublicKey() === stablePubkey;
   } catch {
     return false;
   }
@@ -1175,7 +1205,11 @@ export function loadRoom(id: string, coordinatorPubkey?: string): StoredRoom | n
       const legacyKey = `${ROOM_KEY_PREFIX}${id}`;
       const legacy = readStoredRoom(roomStorage().getItem(legacyKey));
       if (legacy?.id !== id || legacy.coordinatorPubkey !== coordinatorPubkey) return null;
-      migrateLegacyRoom(legacyKey, legacy);
+      try {
+        migrateLegacyRoom(legacyKey, legacy);
+      } catch {
+        // Full or read-only storage must not hide a readable room; a later load retries.
+      }
       return legacy;
     }
 
@@ -1216,6 +1250,11 @@ export function listRooms(): StoredRoom[] {
       }
     }
 
+  } catch {
+    return [];
+  }
+
+  try {
     for (const entry of rooms.values()) {
       if (!entry.currentKey) migrateLegacyRoom(entry.storageKey, entry.room);
     }
@@ -1233,7 +1272,8 @@ export function listRooms(): StoredRoom[] {
       }
     }
   } catch {
-    return [];
+    // Migration is housekeeping. Full or read-only storage must not hide readable
+    // rooms, so the records already validated above are still returned.
   }
 
   return Array.from(rooms.values(), ({ room }) => room).sort((left, right) => {
@@ -1282,9 +1322,9 @@ export function loadLastOpenRoom(coordinatorPubkey: string): StoredRoom | null {
         record = { version: 1, coordinatorPubkey: value.coordinatorPubkey, roomId: value.roomId };
       }
     } catch { /* legacy raw id handled below */ }
-    if (!record && raw.length > 0) {
+    if (!record) {
       const legacy = loadRoom(raw, coordinatorPubkey);
-      if (legacy?.coordinatorPubkey === coordinatorPubkey) {
+      if (legacy) {
         rememberLastOpenRoom(legacy);
         record = { version: 1, coordinatorPubkey, roomId: legacy.id };
       }
@@ -1346,12 +1386,12 @@ export function removeStoredRoom(
   }
 
   const currentKey = roomStorageKey(room.coordinatorPubkey, room.id);
-  const current = readStoredRoom(roomStorage().getItem(currentKey));
-  if (current && history) getRoomEnvironment().onRoomRemoved?.(current, history.reason, history.coordinatorLabel);
-  if (sameRoomIdentity(current, room)) roomStorage().removeItem(currentKey);
-
   const legacyKey = `${ROOM_KEY_PREFIX}${room.id}`;
+  const current = readStoredRoom(roomStorage().getItem(currentKey));
   const legacy = readStoredRoom(roomStorage().getItem(legacyKey));
+  const persisted = [current, legacy].find((candidate) => sameRoomIdentity(candidate, room));
+  if (persisted && history) getRoomEnvironment().onRoomRemoved?.(persisted, history.reason, history.coordinatorLabel);
+  if (sameRoomIdentity(current, room)) roomStorage().removeItem(currentKey);
   if (sameRoomIdentity(legacy, room)) roomStorage().removeItem(legacyKey);
 
   dispatchRoomEvent(new CustomEvent(ROOMS_CHANGED_EVENT, {
@@ -1537,6 +1577,7 @@ function emitUnreadChange(room: Pick<StoredRoom, "id" | "coordinatorPubkey">, pr
 function migrateLegacyRoom(storageKey: string, room: StoredRoom): void {
   const nextKey = roomStorageKey(room.coordinatorPubkey, room.id);
   const current = readStoredRoom(roomStorage().getItem(nextKey));
+  /* v8 ignore next -- callers only migrate without a current record; this guard prevents an overwrite if that changes */
   if (!sameRoomIdentity(current, room)) roomStorage().setItem(nextKey, JSON.stringify(room));
   const verified = readStoredRoom(roomStorage().getItem(nextKey));
   if (storageKey !== nextKey && sameRoomIdentity(verified, room)) {
