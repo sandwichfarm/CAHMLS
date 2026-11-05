@@ -45,6 +45,8 @@ export interface ChatCoordinatorOperations {
   /** Same-tab host optimization. Remote clients continue to use polling. */
   subscribeJoinRequests?(groupId: string, listener: () => void | Promise<void>): () => void;
   publishKeyPackage(reference: string, keyPackageBase64: string): Promise<void>;
+  /** Reports the references this identity currently has admission material for. */
+  listOwnKeyPackageRefs(): Promise<string[]>;
   storeJoinRequest(groupId: string, keyPackageReference: string, inviteToken?: string): Promise<void>;
   fetchWelcomes(consumed?: Array<{ kp_ref: string; at: number }>): Promise<RemoteWelcome[]>;
   fetchJoinRequests(groupId: string, consumed?: Array<{ pk: string; at: number }>): Promise<RemoteJoinRequest[]>;
@@ -115,6 +117,15 @@ export class ChatCoordinatorClient implements ChatCoordinatorOperations {
 
   async publishKeyPackage(reference: string, keyPackageBase64: string): Promise<void> {
     await this.callIdempotentWrite("kp_publish", { kp_ref: reference, kp_64: keyPackageBase64 });
+  }
+
+  async listOwnKeyPackageRefs(): Promise<string[]> {
+    const { keyPackages } = await this.call<{ keyPackages: Array<{ kp_ref: string }> }>(
+      "stable",
+      "kp_list",
+      {},
+    );
+    return keyPackages.map(({ kp_ref }) => kp_ref);
   }
 
   async storeJoinRequest(groupId: string, keyPackageReference: string, inviteToken?: string): Promise<void> {
