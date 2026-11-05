@@ -190,7 +190,7 @@ export async function createBrowserCoordinatorStorage(
     storage = new InMemoryCoordinatorStorage(snapshot, (nextSnapshot) => {
       saveDeletedGroups(coordinatorPubkey, nextSnapshot.deletedGroups!);
       persistence?.save(nextSnapshot);
-    });
+    }, persistent ? 1 : Date.now());
   } catch (error) {
     // A snapshot that cannot be restored must not leave the database open.
     persistence?.close();

@@ -42,7 +42,7 @@ Rooms depend on the `ChatCoordinatorOperations` interface, which has two impleme
 
 1. A sender encrypts an MLS application message, seals it with the group's exporter secret, and adds it to `room.pending`.
 2. The room is persisted before any network call, so a reload can retry delivery.
-3. The session posts the opaque payload and receives its cursor.
+3. Before posting, the session reads new messages. If the group has moved to a new epoch, it seals the message again, since nobody could read the old seal. It then posts the opaque payload and receives its cursor.
 4. Each sync fetches everything after `room.lastCursor` and decrypts it in order, skipping the session's own posts. A message is rejected if its claimed sender does not match the MLS credential that signed it.
 
 `lastCursor` moves only after a fetch. Advancing it when a post returns would skip messages other members sent in the meantime.
@@ -50,7 +50,7 @@ Rooms depend on the `ChatCoordinatorOperations` interface, which has two impleme
 ## Admission flow
 
 1. A guest publishes a last-resort KeyPackage and stores a join request.
-2. The host reads any delivered messages, because a commit makes messages from the older epoch unreadable.
+2. The host reads delivered messages and posts its own queued messages, because a commit makes messages from the older epoch unreadable.
 3. The host consumes the exact KeyPackage named by the request, commits the addition, and posts the commit.
 4. The Welcome goes into a durable outbox on the room before delivery, so a failed delivery is retried instead of stranding the guest.
 

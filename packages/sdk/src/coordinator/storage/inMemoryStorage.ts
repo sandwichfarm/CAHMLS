@@ -73,9 +73,9 @@ export interface CoordinatorStorageSnapshot {
   }>;
 }
 
-function createGroupLog(groupId: string, epoch: bigint): GroupLog {
+function createGroupLog(groupId: string, epoch: bigint, firstCursor: number): GroupLog {
   return {
-    nextCursor: 1,
+    nextCursor: firstCursor,
     routing: {
       groupId,
       latestHandshakeEpoch: epoch,
@@ -98,6 +98,12 @@ export class InMemoryCoordinatorStorage implements CoordinatorStorage {
   constructor(
     snapshot?: CoordinatorStorageSnapshot | null,
     private readonly onChange?: (snapshot: CoordinatorStorageSnapshot) => void,
+    /**
+     * Cursor for the first message of a new group. A store that does not keep its
+     * log across restarts should pass an increasing value, because members keep
+     * their last cursor and only ask for messages after it.
+     */
+    private readonly firstCursor: number = 1,
   ) {
     if (snapshot) {
       this.restoreSnapshot(snapshot);
@@ -398,7 +404,7 @@ export class InMemoryCoordinatorStorage implements CoordinatorStorage {
     this.assertGroupAvailable(params.groupId);
     const group =
       this.groups.get(params.groupId) ??
-      createGroupLog(params.groupId, params.latestHandshakeEpoch);
+      createGroupLog(params.groupId, params.latestHandshakeEpoch, this.firstCursor);
 
     const record: GroupMessageRecord = {
       cursor: group.nextCursor,

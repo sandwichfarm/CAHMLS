@@ -4,7 +4,7 @@ The package is ESM with `sideEffects: false`, so unused entry points are removed
 
 ## Vite
 
-The CAHMLS app builds with Vite and no SDK-specific settings. If the dev server cannot find SQLite's WebAssembly file, exclude the module from dependency pre-bundling:
+The built package needs no special Vite settings. (The CAHMLS app aliases `@cahmls/sdk` to its source, but only so that development never uses a stale build.) If the dev server cannot find SQLite's WebAssembly file, exclude the module from dependency pre-bundling:
 
 ```ts
 import { defineConfig } from "vite";

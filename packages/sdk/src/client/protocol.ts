@@ -109,6 +109,11 @@ export function decodeState(value: string): ClientState {
   return decodeExact(base64ToBytes(value), clientStateDecoder, "stored chat state");
 }
 
+/** The group's current MLS epoch, in a form that can be stored as JSON. */
+export function stateEpoch(state: ClientState): string {
+  return state.groupContext.epoch.toString();
+}
+
 export function groupId(state: ClientState): string {
   return textDecoder.decode(state.groupContext.groupId);
 }
@@ -377,6 +382,11 @@ export async function decryptMessage(state: ClientState, opaqueBase64: string, o
   };
 }
 
+/** True when a millisecond timestamp fits in a JavaScript `Date`. */
+export function isRepresentableTime(milliseconds: number): boolean {
+  return Number.isFinite(milliseconds) && Math.abs(milliseconds) <= 8.64e15;
+}
+
 /** The BasicCredential identity of the group member with this signature key. */
 function memberIdentityForSigningKey(state: ClientState, signingKey: Uint8Array | null): string | null {
   const member = signingKey && getGroupMembers(state).find((leaf) => equalBytes(leaf.signaturePublicKey, signingKey));
@@ -437,6 +447,7 @@ function decodeCordnMessageEvent(bytes: Uint8Array): CordnMessageEvent {
     || typeof candidate.pubkey !== "string"
     || typeof candidate.content !== "string"
     || typeof candidate.created_at !== "number"
+    || !isRepresentableTime(candidate.created_at * 1_000)
     || typeof candidate.kind !== "number"
     || !Array.isArray(candidate.tags)) {
     throw new Error("Invalid Cordn message envelope");

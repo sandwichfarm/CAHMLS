@@ -14,8 +14,10 @@ const protocolMocks = vi.hoisted(() => ({
   hasValidChatEnvelopeAuth: vi.fn(() => true),
   groupId: vi.fn(),
   joinWelcome: vi.fn(),
+  isRepresentableTime: vi.fn(() => true),
   sanitizeChatEnvelopeHostBadge: vi.fn((envelope: unknown) => envelope),
   signChatEnvelope: vi.fn((envelope: unknown) => envelope),
+  stateEpoch: vi.fn(() => "0"),
 }));
 
 const coordinatorMocks = vi.hoisted(() => ({

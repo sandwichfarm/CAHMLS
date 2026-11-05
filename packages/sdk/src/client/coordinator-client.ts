@@ -73,6 +73,7 @@ export class ChatCoordinatorClient implements ChatCoordinatorOperations {
   private stableConnected: Promise<void> | null = null;
   private ephemeralConnected: Promise<void> | null = null;
   private readonly lifecycle = new AbortController();
+  private closed = false;
 
   constructor(private readonly target: CoordinatorTarget, signer: NostrSigner) {
     const operationalRelays = target.relayUrls.length > 0
@@ -100,8 +101,9 @@ export class ChatCoordinatorClient implements ChatCoordinatorOperations {
   }
 
   async close(): Promise<void> {
-    // Abort first so in-flight calls and retry delays cannot reconnect a closed client.
-    this.lifecycle.abort();
+    // Refuse new work now, but abort in-flight calls only once the connections are
+    // closed. Aborting earlier makes each call try to publish a cancellation.
+    this.closed = true;
     await Promise.allSettled([
       this.stableClient.close(),
       this.ephemeralClient.close(),
@@ -110,6 +112,7 @@ export class ChatCoordinatorClient implements ChatCoordinatorOperations {
       this.stableTransport.close(),
       this.ephemeralTransport.close(),
     ]);
+    this.lifecycle.abort();
     this.stableConnected = null;
     this.ephemeralConnected = null;
   }
@@ -192,7 +195,7 @@ export class ChatCoordinatorClient implements ChatCoordinatorOperations {
   }
 
   private async call<T>(kind: CoordinatorTransportKind, name: string, args: Record<string, unknown>): Promise<T> {
-    if (this.lifecycle.signal.aborted) throw new Error("Coordinator client is closed");
+    if (this.closed) throw new Error("Coordinator client is closed");
     await this.ensureConnected(kind);
     const client = kind === "stable" ? this.stableClient : this.ephemeralClient;
     const response = await client.callTool(
@@ -239,9 +242,9 @@ export class ChatCoordinatorClient implements ChatCoordinatorOperations {
         return await this.call<T>("stable", name, args);
       } catch (error) {
         const delay = IDEMPOTENT_WRITE_RETRY_DELAYS_MS[attempt];
-        if (delay === undefined || this.lifecycle.signal.aborted) throw error;
+        if (delay === undefined || this.closed) throw error;
         await this.retryDelay(delay);
-        if (this.lifecycle.signal.aborted) throw error;
+        if (this.closed) throw error;
       }
     }
   }

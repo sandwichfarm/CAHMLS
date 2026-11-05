@@ -48,7 +48,7 @@ session.discard();             // permanent; in-flight work cannot rewrite the r
 | `setAutoApprove(enabled)` | Changes the admission policy. |
 | `setIdentity(identity)` | Updates the display identity on future messages. |
 
-`send()` throws unless the session is connected and the member has been admitted. After that, it succeeds even if delivery fails: the message remains in `room.pending` and is retried on later syncs.
+`send()` throws unless the session is connected and the member has been admitted. After that, it succeeds even if delivery fails: the message remains in `room.pending` and is retried on later syncs, sealed again if the group has moved to a new epoch.
 
 ## Creating rooms
 
@@ -61,7 +61,7 @@ Set `identityOwner` to `"anonymous"` for a key your application can retire and `
 
 `createInviteUrl()` and `parseInviteUrl()` produce and read Cordn-compatible links. Local and insecure relay URLs are left out of invites, since other clients cannot reach them.
 
-Treat invite contents as hints. `hostIdentityForRoom()` trusts a claimed host only once MLS proves the same creator key, and otherwise reports `Unknown host`.
+Treat invite contents as hints. Once a member has joined, `hostIdentityForRoom()` trusts a claimed host only if MLS proves the same creator key, and otherwise reports `Unknown host`. While a guest is still waiting for admission, it returns the invite's unverified claim, so label it accordingly.
 
 ## Room events
 

@@ -12,6 +12,7 @@ import {
   createKeyPackage,
   createRoomState,
   decodeState,
+  stateEpoch,
   encodeState,
   encryptMessage,
   groupId,
@@ -1708,12 +1709,56 @@ describe("recovery", () => {
     hub.ops.postGroupMessage.mockRejectedValueOnce(new Error("post failed"));
     await hostSession.send("queued");
     expect(stored(hostSession.room)?.pending).toHaveLength(1);
-    hub.ops.fetchMessages.mockRejectedValueOnce(new Error("pull failed"));
+    // The read before posting succeeds; the read after posting fails.
+    hub.ops.fetchMessages.mockResolvedValueOnce([]).mockRejectedValueOnce(new Error("pull failed"));
 
     await expect(hostSession.recover(new AbortController().signal)).rejects.toThrow("Hosted room recovery failed");
 
     expect(hub.messages).toHaveLength(1);
     expect(stored(hostSession.room)?.pending).toEqual([]);
+  });
+
+  it("keeps a queued message unposted when the read before posting fails", async () => {
+    const hub = new FakeCoordinator();
+    const { hostSession } = await twoMembers(hub);
+    track(hostSession);
+    await hostSession.start();
+    hub.ops.postGroupMessage.mockRejectedValueOnce(new Error("post failed"));
+    await hostSession.send("queued");
+    hub.ops.fetchMessages.mockRejectedValueOnce(new Error("pull failed"));
+
+    await hostSession.sync();
+
+    expect(hub.messages).toHaveLength(0);
+    expect(stored(hostSession.room)?.pending).toHaveLength(1);
+    expect(hostSession.status.connection).toBe("offline");
+  });
+
+  it("posts a record from an older version unchanged, with no epoch to compare", async () => {
+    const hub = new FakeCoordinator();
+    const { hostSession } = await twoMembers(hub, { pending: [{ id: "legacy", opaqueBase64: "b3BhcXVl" }] });
+    track(hostSession);
+
+    await hostSession.start();
+
+    expect(hub.messages.map((message) => message.msg_64)).toContain("b3BhcXVl");
+    expect(stored(hostSession.room)?.pending).toEqual([]);
+  });
+
+  it("reseals only entries that carry an envelope", async () => {
+    const hub = new FakeCoordinator();
+    const { hostSession } = await twoMembers(hub, {
+      pending: [
+        { id: "old-format", opaqueBase64: "b2xk", epoch: "999" },
+        { id: "current", opaqueBase64: "Y3VycmVudA", epoch: "1" },
+      ],
+    });
+    track(hostSession);
+    hostSession.room.pending[1]!.epoch = stateEpoch(decodeState(hostSession.room.stateBase64));
+
+    await hostSession.start();
+
+    expect(hub.messages.map((message) => message.msg_64)).toEqual(expect.arrayContaining(["b2xk", "Y3VycmVudA"]));
   });
 
   describe("cancellation", () => {
@@ -1765,7 +1810,28 @@ describe("recovery", () => {
       hub.ops.postGroupMessage.mockImplementationOnce(async (gid) => { controller.abort(); return { cursor: 1, gid, at: 1 }; });
 
       await expectAborted(hostSession, controller);
-      expect(hub.ops.fetchMessages).not.toHaveBeenCalled();
+      // Only the read before posting ran; nothing continued after the abort.
+      expect(hub.ops.fetchMessages).toHaveBeenCalledOnce();
+    });
+
+    it("while a guest posts queued messages", async () => {
+      const hub = new FakeCoordinator();
+      const { guestSession } = await twoMembers(hub, {}, { pending: [{ id: "queued", opaqueBase64: "b3BhcXVl" }] });
+      const controller = new AbortController();
+      hub.ops.postGroupMessage.mockImplementationOnce(async (gid) => { controller.abort(); return { cursor: 1, gid, at: 1 }; });
+
+      await expectAborted(guestSession, controller);
+      expect(hub.ops.fetchMessages).toHaveBeenCalledOnce();
+    });
+
+    it("while reading before posting queued messages", async () => {
+      const hub = new FakeCoordinator();
+      const { hostSession } = await twoMembers(hub, { pending: [{ id: "queued", opaqueBase64: "b3BhcXVl" }] });
+      const controller = new AbortController();
+      hub.ops.fetchMessages.mockImplementationOnce(async () => { controller.abort(); return []; });
+
+      await expectAborted(hostSession, controller);
+      expect(hub.ops.fetchJoinRequests).not.toHaveBeenCalled();
     });
 
     it("while still queued behind another operation", async () => {

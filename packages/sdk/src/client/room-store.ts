@@ -12,10 +12,12 @@ import {
   decryptMessage,
   encodeState,
   encryptMessage,
+  stateEpoch,
   groupCreatorPubkey,
   groupId,
   hasValidChatEnvelopeAuth,
   isChatReactionMutation,
+  isRepresentableTime,
   joinWelcome,
   sanitizeChatEnvelopeHostBadge,
   signChatEnvelope,
@@ -56,6 +58,10 @@ export interface StoredMessage extends ChatEnvelope {
 export interface PendingMessage {
   id: string;
   opaqueBase64: string;
+  /** MLS epoch this was sealed for. Missing only on records from older versions. */
+  epoch?: string;
+  /** Kept so a message queued across an epoch change can be sealed again. */
+  envelope?: ChatEnvelope;
 }
 
 /** A committed membership change whose Welcome still needs to reach Cordn. */
@@ -335,10 +341,11 @@ export class ChatRoomSession {
         content: trimmed,
         createdAt: this.nextMessageTimestamp(trimmed),
       }, this.signer);
-      const encrypted = await encryptMessage(decodeState(this.room.stateBase64), event);
+      const state = decodeState(this.room.stateBase64);
+      const encrypted = await encryptMessage(state, event);
       this.room.stateBase64 = encodeState(encrypted.state);
       this.room.messages = [...this.room.messages, { ...event, pending: true }];
-      this.room.pending = [...this.room.pending, { id: event.id, opaqueBase64: encrypted.opaqueBase64 }];
+      this.room.pending = [...this.room.pending, { id: event.id, opaqueBase64: encrypted.opaqueBase64, epoch: stateEpoch(state), envelope: event }];
       this.persist();
       this.emit();
       await this.syncOnce();
@@ -391,10 +398,11 @@ export class ChatRoomSession {
         active,
       },
     }, this.signer);
-    const encrypted = await encryptMessage(decodeState(this.room.stateBase64), event);
+    const state = decodeState(this.room.stateBase64);
+    const encrypted = await encryptMessage(state, event);
     this.room.stateBase64 = encodeState(encrypted.state);
     this.applyReaction(event);
-    this.room.pending = [...this.room.pending, { id: event.id, opaqueBase64: encrypted.opaqueBase64 }];
+    this.room.pending = [...this.room.pending, { id: event.id, opaqueBase64: encrypted.opaqueBase64, epoch: stateEpoch(state), envelope: event }];
     this.persist();
     this.emit();
     await this.syncOnce();
@@ -474,6 +482,7 @@ export class ChatRoomSession {
     try {
       const client = this.getClient();
       if (this.room.isHost) {
+        await this.deliverPending(client);
         this.recordJoinedGuests(await this.flushPendingWelcomes(client));
         const requests = this.currentInviteRequests(await client.fetchJoinRequests(this.room.id));
         const newRequests = requests.filter((request) => !this.knownJoinRequestIds.has(request.kp_ref));
@@ -495,7 +504,7 @@ export class ChatRoomSession {
         if (!this.stopped) this.markServerOnline("Waiting for the host to admit you");
         return;
       }
-      await this.flushPending(client);
+      await this.deliverPending(client);
       await this.pullMessages(client);
       if (this.stopped) return;
       this.markServerOnline();
@@ -518,6 +527,8 @@ export class ChatRoomSession {
     try {
       const client = this.getClient();
       if (this.room.isHost) {
+        await this.deliverPending(client);
+        if (!active()) throw new DOMException("Recovery cancelled", "AbortError");
         this.recordJoinedGuests(await this.flushPendingWelcomes(client));
         const requests = this.currentInviteRequests(await client.fetchJoinRequests(this.room.id));
         if (!active()) throw new DOMException("Recovery cancelled", "AbortError");
@@ -544,7 +555,7 @@ export class ChatRoomSession {
         this.emit();
         return;
       }
-      await this.flushPending(client);
+      await this.deliverPending(client);
       if (!active()) throw new DOMException("Recovery cancelled", "AbortError");
       await this.pullMessages(client);
       if (!active()) throw new DOMException("Recovery cancelled", "AbortError");
@@ -627,6 +638,8 @@ export class ChatRoomSession {
     requests: RemoteJoinRequest[],
   ): Promise<{ accepted: RemoteJoinRequest[]; retryable: RemoteJoinRequest[] }> {
     const retryable: RemoteJoinRequest[] = [];
+    const generation = this.lifecycleGeneration;
+    const active = (): boolean => !this.stopped && generation === this.lifecycleGeneration;
     if (requests.length > 0) {
       // A commit advances the epoch, after which older messages can no longer be
       // decrypted. Read everything already delivered before changing membership.
@@ -638,6 +651,8 @@ export class ChatRoomSession {
       }
     }
     for (const request of requests) {
+      // A cancelled recovery must not change membership: its state is about to be discarded.
+      if (!active()) return { accepted: [], retryable: requests };
       try {
         // Prefer the exact package named by this request. A stable Nostr
         // identity can have packages from several Cordn-compatible clients;
@@ -793,6 +808,37 @@ export class ChatRoomSession {
     await client.publishKeyPackage(keyPackage.reference, keyPackage.publicBase64);
     await client.storeJoinRequest(this.room.id, keyPackage.reference, this.room.inviteToken);
     this.room.keyPackage = keyPackage;
+    this.persist();
+  }
+
+  /**
+   * Post queued messages for the current epoch. Reading first reveals any commit
+   * this member has not seen yet, because a message sealed for an older epoch
+   * cannot be read by anyone once the group has moved on.
+   */
+  private async deliverPending(client: ChatCoordinatorOperations): Promise<void> {
+    if (this.room.pending.length === 0) return;
+    await this.pullMessages(client);
+    await this.resealStalePending();
+    await this.flushPending(client);
+  }
+
+  private async resealStalePending(): Promise<void> {
+    let state = decodeState(this.room.stateBase64);
+    const epoch = stateEpoch(state);
+    if (this.room.pending.every((pending) => pending.epoch === undefined || pending.epoch === epoch)) return;
+    const resealed: PendingMessage[] = [];
+    for (const pending of this.room.pending) {
+      if (!pending.envelope || pending.epoch === epoch) {
+        resealed.push(pending);
+        continue;
+      }
+      const encrypted = await encryptMessage(state, pending.envelope);
+      state = encrypted.state;
+      resealed.push({ ...pending, opaqueBase64: encrypted.opaqueBase64, epoch });
+    }
+    this.room.stateBase64 = encodeState(state);
+    this.room.pending = resealed;
     this.persist();
   }
 
@@ -1487,7 +1533,7 @@ function readStoredRoom(raw: string | null): StoredRoom | null {
       || !Array.isArray(room.pending)
       || !room.pending.every(isPendingMessage)) return null;
     const stored = room as unknown as StoredRoom;
-    stored.messages = normalizeStoredMessages(stored.messages);
+    stored.messages = normalizeStoredMessages(stored.messages.filter((message) => isRepresentableTime(message.createdAt)));
     stored.pending = uniqueById(stored.pending);
     if (!Array.isArray(stored.pendingWelcomes)
       || !stored.pendingWelcomes.every(isPendingWelcomeDelivery)) {

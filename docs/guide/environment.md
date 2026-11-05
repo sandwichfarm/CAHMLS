@@ -30,27 +30,35 @@ import { configureRoomEnvironment, createMemoryRoomStorage } from "@cahmls/sdk/c
 import { InMemoryCoordinatorStorage } from "@cahmls/sdk/coordinator";
 import { KeyStorage } from "@cahmls/sdk/crypto";
 import { CoordinatorRuntime } from "@cahmls/sdk/runtime";
+import { TransportFactory } from "@cahmls/sdk/server";
 
 configureRoomEnvironment({
   storage: createMemoryRoomStorage(),
   origin: () => "https://chat.example",
 });
 
-const keyBackend = createMemoryRoomStorage();
+const createStorage = () => new InMemoryCoordinatorStorage();
+const factory = new TransportFactory({ createStorage });
+
 const runtime = new CoordinatorRuntime({
   config,
-  keyStorage: new KeyStorage(keyBackend),
-  deps: { createStorage: () => new InMemoryCoordinatorStorage() },
+  keyStorage: new KeyStorage(createMemoryRoomStorage()),
+  deps: {
+    createStorage,
+    createTransport: (...args) => factory.create(...args),
+  },
 });
 ```
 
-`createMemoryRoomStorage()` keeps data only for the life of the process. For durable hosting, implement `RoomStorage` on a real store.
+`deps.createTransport` supplies the storage used while running, and `deps.createStorage` the storage used to edit hosted rooms while stopped, so pass both. `createMemoryRoomStorage()` keeps data only for the life of the process. For durable hosting, implement `RoomStorage` on a real store.
 
 A key is a Nostr identity, so back up anything you persist yourself and encrypt it at rest.
 
 The `online` and `offline` signals come from `events`. Node.js does not emit them, so dispatch them on your target if you want connectivity changes to take effect immediately.
 
 ## Coordinator storage
+
+Members remember the last message cursor they read. A coordinator that loses its log on restart must not reuse old cursors, or members will not ask for the new messages. `createBrowserCoordinatorStorage()` handles this in memory-only mode. For your own volatile store, pass an increasing first cursor, such as `Date.now()`, as the third argument of `InMemoryCoordinatorStorage`.
 
 `createBrowserCoordinatorStorage()` from `@cahmls/sdk/storage/browser` persists coordinator state in SQLite on `localStorage`, falling back to a plain `localStorage` snapshot if SQLite is unavailable. With `persistent` set to `false`, state stays in memory, except for deleted-room tombstones, which always survive so deleted rooms cannot return.
 
