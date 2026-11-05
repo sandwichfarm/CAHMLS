@@ -145,7 +145,7 @@
 
   {#if open}
     <button class="user-scrim" type="button" aria-label="Close profile menu" onclick={closeMenu}></button>
-    <div use:viewportOverlay={{ anchor: trigger, preferredSide: "above", align: "start", compactSheetBelow: 900 }} class="user-menu" role="dialog" aria-label="User profile">
+    <div use:viewportOverlay={{ anchor: trigger, preferredSide: "above", align: "start", compactSheetBelow: 520 }} class="user-menu" role="dialog" aria-label="User profile">
       <header>
         <img src={userProfileStore.avatarUrl} alt="" onerror={avatarFallback} />
         <div class="min-w-0">

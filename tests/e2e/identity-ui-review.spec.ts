@@ -127,6 +127,18 @@ test("uses the selected identity tokens and a labelled 44px close affordance", a
   await expect(trigger).toBeFocused();
 });
 
+test("keeps the profile popover compact at tablet widths", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 700 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open room browser" }).click();
+  const { menu } = await openIdentityMenu(page);
+
+  const box = await menu.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box?.width).toBeLessThanOrEqual(352);
+  expect(box?.width).toBeLessThan(page.viewportSize()!.width / 2);
+});
+
 test("uses secondary status color and disables the close affordance while rotating", async ({ page }) => {
   await page.addInitScript((boundaryKey) => {
     const testWindow = window as typeof window & {
