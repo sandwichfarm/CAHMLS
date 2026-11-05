@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { vi } from "vitest";
 import { createMobileOverlayController } from "../../src/components/mobile-overlay.svelte";
 
 function surface(id: string, opener: HTMLButtonElement, root: HTMLElement, onClose?: () => void) {
@@ -46,6 +47,23 @@ describe("mobile overlay controller", () => {
     expect(controller.activeId).toBe("profile");
     controller.close();
     expect(document.activeElement).toBe(fallback);
+    controller.destroy();
+  });
+
+  it("leaves its history entry for a navigation that will replace it", () => {
+    const app = document.createElement("main");
+    const drawerRoot = document.createElement("div");
+    const opener = document.createElement("button");
+    document.body.append(app, opener, drawerRoot);
+    const back = vi.spyOn(window.history, "back");
+    const controller = createMobileOverlayController({ applicationRoot: app, history: window.history });
+    controller.open(surface("rooms", opener, drawerRoot));
+
+    controller.close({ keepHistory: true });
+
+    expect(back).not.toHaveBeenCalled();
+    expect(controller.activeId).toBeUndefined();
+    back.mockRestore();
     controller.destroy();
   });
 

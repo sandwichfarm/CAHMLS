@@ -32,6 +32,7 @@ Plan: Not started
 Status: Ready to plan
 Last activity: 2026-08-07 — Phase 26 complete; offline coordinator room disclosure verified
 Pull request: [#13 — favorite groups and online-only invites](https://github.com/sandwichfarm/CAHMLS/pull/13) — open, stacked on [#12 — participant chat interactions](https://github.com/sandwichfarm/CAHMLS/pull/12). [#9](https://github.com/sandwichfarm/CAHMLS/pull/9) merged 2026-08-06.
+README refresh: [#16 — rewrite README for CAHMLS](https://github.com/sandwichfarm/CAHMLS/pull/16) — merged, outside phase scope.
 
 Progress: [██████████░░░░░░░░░░] 3/6 phases ([█████████░] 93%)
 

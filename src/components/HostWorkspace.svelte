@@ -117,6 +117,7 @@
   let unregisterAnonymousSession: (() => void) | null = null;
   let roomNameInput: HTMLInputElement | undefined = $state();
   let pendingJoinRequests = $state<RemoteJoinRequest[]>([]);
+  let admissionError = $state<string | null>(null);
   let managementOpen = $state(false);
   let compactViewport = $state(false);
   let mobileRailOpen = $state(false);
@@ -418,6 +419,7 @@
       // for the interval or a route change.
       probeRemoteCoordinatorsIfTargetsChanged();
       pendingJoinRequests = [...session.pendingJoinRequests];
+      admissionError = session.admissionError;
       hostedRooms = hostedRooms.map((entry) => sameRoomIdentity(entry.room, nextRoom) ? { ...entry, room: nextRoom } : entry);
       if (receivedMessage) playIncomingTone();
       acknowledgeVisibleHostRoom();
@@ -1001,7 +1003,7 @@
 
   async function selectRoom(entry: HostedRoomEntry) {
     inviteDialogOpen = false;
-    closeMobileRoomBrowser(false);
+    closeMobileRoomBrowser(false, hasChatIntent);
     mobileToolsOpen = false;
     selectedServerPubkey = coordinatorPubkey;
     const latest = loadRoom(entry.room.id, entry.room.coordinatorPubkey) ?? entry.room;
@@ -1016,7 +1018,7 @@
   }
 
   function navigateFromRail(href: string): void {
-    closeMobileRoomBrowser(false);
+    closeMobileRoomBrowser(false, true);
     mobileToolsOpen = false;
     onNavigate(href);
   }
@@ -1106,8 +1108,8 @@
     });
   }
 
-  function closeMobileRoomBrowser(restoreFocus = true): void {
-    if (mobileOverlay?.activeId === "room-browser") mobileOverlay.close({ restoreFocus });
+  function closeMobileRoomBrowser(restoreFocus = true, keepHistory = false): void {
+    if (mobileOverlay?.activeId === "room-browser") mobileOverlay.close({ restoreFocus, keepHistory });
     else mobileRailOpen = false;
   }
 
@@ -1132,6 +1134,10 @@
   async function approveWaitingInvitees() {
     try {
       await session?.approveJoinRequests();
+      // Admission runs per request and reports partial failure through the
+      // session, so an approval that resolves is not necessarily an approval
+      // that admitted anyone.
+      admissionError = session?.admissionError ?? null;
     } catch (cause) {
       error = cause instanceof Error ? cause.message : "Could not approve invitees";
     }
@@ -1908,6 +1914,7 @@
               <span class="sr-only" data-testid="invite-link">{inviteUrl}</span>
               {#if !autoApprove}
                 <PendingInvitees requests={pendingJoinRequests} onApprove={approveWaitingInvitees} />
+                {#if admissionError}<p class="admission-error" role="status" data-testid="admission-error">{admissionError}</p>{/if}
               {/if}
               {#if error}<p class="text-sm text-[#ffaaa3]">{error}</p>{/if}
             {/if}
@@ -1949,6 +1956,7 @@
               </div>
               <span class="sr-only" data-testid="invite-link">{inviteUrl}</span>
               {#if !autoApprove}<PendingInvitees requests={pendingJoinRequests} onApprove={approveWaitingInvitees} />{/if}
+              {#if admissionError}<p class="admission-error" role="status" data-testid="admission-error">{admissionError}</p>{/if}
               {#if error}<p class="text-sm text-[#ffaaa3]">{error}</p>{/if}
             {/if}
             </div>
@@ -2511,6 +2519,7 @@
   .host-primary { min-width: 44px; min-height: 44px; border: 1px solid #7cf59d; background: #7cf59d; padding: .72rem 1rem; color: #08110b; font-weight: 650; }
   .host-primary:hover { border-color: #c5ffcf; background: #c5ffcf; }
   .host-primary:disabled { cursor: not-allowed; opacity: .45; }
+  .admission-error { margin-top: .4rem; color: #ffaaa3; font-size: .72rem; line-height: 1.4; }
   .host-secondary { border: 1px solid #496451; padding: .55rem .7rem; color: #c6eccc; font-size: .75rem; }
   .host-secondary:hover { border-color: #7cf59d; }
   .channel-browser { overflow: hidden; border: 1px solid #293832; background: #090e0b; }

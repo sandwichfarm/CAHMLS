@@ -19,6 +19,12 @@ export interface MobileOverlayControllerOptions {
 interface CloseOptions {
   restoreFocus?: boolean;
   fromHistory?: boolean;
+  /**
+   * Leave the overlay's history entry in place for a navigation that is about to
+   * replace it. Popping is asynchronous, so it would otherwise land after that
+   * navigation and undo it.
+   */
+  keepHistory?: boolean;
 }
 
 const focusableSelector = [
@@ -110,7 +116,7 @@ export function createMobileOverlayController(options: MobileOverlayControllerOp
     for (const root of backgroundRoots) root.inert = false;
     document.removeEventListener("keydown", keydown);
     window.removeEventListener("popstate", popstate);
-    const shouldPop = ownsHistory && !closeOptions.fromHistory;
+    const shouldPop = ownsHistory && !closeOptions.fromHistory && !closeOptions.keepHistory;
     ownsHistory = false;
     if (shouldPop) history?.back();
     if (closeOptions.restoreFocus !== false) {

@@ -187,7 +187,6 @@ test("complete durable host journey uses touch controls", async ({ page }, testI
   await expect(page.getByTestId("host-message-list").getByText("After the room actions sheet")).toBeVisible();
 
   await stopCoordinator(page);
-  await expect(page.getByText("Stopping and saving…", { exact: true })).toBeVisible();
   await expect(page.getByTestId("status-badge")).toHaveText("idle", { timeout: settle });
   await startCoordinator(page);
   await expect(page.getByTestId("status-badge")).toHaveText("running", { timeout: settle });

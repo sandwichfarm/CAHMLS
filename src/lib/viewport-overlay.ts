@@ -118,6 +118,9 @@ export function viewportOverlay(node: HTMLElement, initialOptions: ViewportOverl
     node.style.zIndex = "1000";
     node.style.inset = "auto";
     node.style.margin = "0";
+    // A sheet can outlive the drawer that opened it, whose closed state disables
+    // pointer events on its descendants.
+    node.style.pointerEvents = "auto";
     node.style.maxWidth = `calc(100vw - ${(options.gutter ?? 8) * 2}px)`;
     node.style.width = "";
     node.style.maxHeight = "";
