@@ -229,6 +229,7 @@ describe("LocalHostCoordinatorClient", () => {
   describe("guest-only operations", () => {
     test("a host session refuses them rather than silently doing nothing", async () => {
       await expect(client.publishKeyPackage()).rejects.toThrow("cannot publish a guest key package");
+      await expect(client.listOwnKeyPackageRefs()).rejects.toThrow("cannot list guest key packages");
       await expect(client.storeJoinRequest()).rejects.toThrow("cannot request guest admission");
       await expect(client.fetchWelcomes()).rejects.toThrow("cannot consume guest Welcomes");
     });

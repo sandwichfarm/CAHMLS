@@ -113,6 +113,10 @@ export class LocalHostCoordinatorClient implements ChatCoordinatorOperations {
     throw new Error("A local host session cannot publish a guest key package");
   }
 
+  async listOwnKeyPackageRefs(): Promise<string[]> {
+    throw new Error("A local host session cannot list guest key packages");
+  }
+
   async storeJoinRequest(): Promise<void> {
     throw new Error("A local host session cannot request guest admission");
   }

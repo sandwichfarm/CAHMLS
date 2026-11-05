@@ -77,6 +77,8 @@ class FakeCoordinator {
       this.joinRequestListener = listener;
       return this.unsubscribe;
     }),
+    // Recovery from a lost KeyPackage has its own suite; a failed probe leaves a wait untouched.
+    listOwnKeyPackageRefs: vi.fn(async (): Promise<string[]> => { throw new Error("not offered"); }),
     publishKeyPackage: vi.fn(async (_reference: string, _keyPackageBase64: string) => undefined),
     storeJoinRequest: vi.fn(async (_groupId: string, _reference: string, _inviteToken?: string) => undefined),
     fetchWelcomes: vi.fn(async (consumed?: Array<{ kp_ref: string; at: number }>) => {

@@ -54,6 +54,15 @@ describe("ChatCoordinatorClient", () => {
       expect(clientNames()).toEqual(["CvmMlsDeliveryServiceClient"]);
     });
 
+    test("listOwnKeyPackageRefs reads kp_list on the identity channel", async () => {
+      callTool.mockResolvedValueOnce(ok({ keyPackages: [{ pk: "p", kp_ref: "one", last_resort: true, at: 1 }, { pk: "p", kp_ref: "two", last_resort: false, at: 2 }] }) as never);
+
+      await expect(client.listOwnKeyPackageRefs()).resolves.toEqual(["one", "two"]);
+
+      expect(lastCall()[0]).toEqual({ name: "kp_list", arguments: {} });
+      expect(clientNames()).toEqual(["CvmMlsDeliveryServiceClient"]);
+    });
+
     test("storeJoinRequest includes an invite token only when there is one", async () => {
       await client.storeJoinRequest("gid", "ref");
       expect(lastCall()[0]).toEqual({ name: "join_request_store", arguments: { gid: "gid", kp_ref: "ref" } });
