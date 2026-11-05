@@ -102,7 +102,9 @@ export function viewportOverlay(node: HTMLElement, initialOptions: ViewportOverl
     node.style.margin = "0";
     node.style.maxWidth = `calc(100vw - ${(options.gutter ?? 8) * 2}px)`;
     node.style.width = "";
-    node.style.maxHeight = "";
+    // Measure the full content: a stylesheet cap would understate the height used to
+    // place the overlay, and the larger inline limit below would then let it overflow.
+    node.style.maxHeight = "none";
     const naturalRect = node.getBoundingClientRect();
     const compactSheet = options.compactSheetBelow !== undefined
       && window.innerWidth <= options.compactSheetBelow;
