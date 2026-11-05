@@ -227,7 +227,7 @@ Plans:
 
 **Plans**: 1 plan
 
-- [ ] 24-01-PLAN.md — Extract the package, add the runtime, fix defects, cover the SDK, and document it.
+- [x] 24-01-PLAN.md — Extract the package, add the runtime, fix defects, cover the SDK, and document it.
 
 **UI hint**: no
 
@@ -244,4 +244,4 @@ Plans:
 | 21. First-Run Coordinator Identity & Profile | 0/TBD | Not started | - |
 | 22. Coordinator-Grouped Sidebar | 2/2 | Complete | 2026-08-06 |
 | 23. Bounded Gift-Wrap Delivery | 2/2 | Complete | 2026-08-06 |
-| 24. SDK Extraction | 0/1 | In Progress |  |
+| 24. SDK Extraction | 1/1 | Complete | 2026-11-05 |

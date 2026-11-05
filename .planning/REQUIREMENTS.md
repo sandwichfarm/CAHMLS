@@ -93,13 +93,13 @@
 
 ### SDK Extraction
 
-- [ ] **SDK-01**: The coordinator, its ContextVM surface, and the client code live in a `@cahmls/sdk` workspace package with no UI framework imports and no imports from the application.
-- [ ] **SDK-02**: The package builds to ESM with type declarations, and every public entry point loads through its `exports` map on plain Node.js.
-- [ ] **SDK-03**: The coordinator lifecycle is usable without Svelte through a `subscribe`/`getSnapshot` runtime, and the web app's store is a thin binding over it.
-- [ ] **SDK-04**: SDK tests enforce coverage thresholds in CI.
-- [ ] **SDK-05**: VitePress documentation provides guides and a generated API reference covering every public export, and builds in CI.
-- [ ] **SDK-06**: The web application has no regressions: its unit, browser, build, and upstream interoperability checks pass after the extraction.
-- [ ] **SDK-07**: Defects found during extraction are fixed with regression tests.
+- [x] **SDK-01**: The coordinator, its ContextVM surface, and the client code live in a `@cahmls/sdk` workspace package with no UI framework imports and no imports from the application.
+- [x] **SDK-02**: The package builds to ESM with type declarations, and every public entry point loads through its `exports` map on plain Node.js.
+- [x] **SDK-03**: The coordinator lifecycle is usable without Svelte through a `subscribe`/`getSnapshot` runtime, and the web app's store is a thin binding over it.
+- [x] **SDK-04**: SDK tests enforce coverage thresholds in CI.
+- [x] **SDK-05**: VitePress documentation provides guides and a generated API reference covering every public export, and builds in CI.
+- [x] **SDK-06**: The web application has no regressions: its unit, browser, build, and upstream interoperability checks pass after the extraction.
+- [x] **SDK-07**: Defects found during extraction are fixed with regression tests.
 
 ## Future Requirements
 
@@ -176,13 +176,13 @@
 | RELAY-04 | Phase 23 | Complete |
 | RELAY-05 | Phase 23 | Complete |
 | RELAY-06 | Phase 23 | Complete |
-| SDK-01 | Phase 24 | In progress |
-| SDK-02 | Phase 24 | In progress |
-| SDK-03 | Phase 24 | In progress |
-| SDK-04 | Phase 24 | In progress |
-| SDK-05 | Phase 24 | In progress |
-| SDK-06 | Phase 24 | In progress |
-| SDK-07 | Phase 24 | In progress |
+| SDK-01 | Phase 24 | Complete |
+| SDK-02 | Phase 24 | Complete |
+| SDK-03 | Phase 24 | Complete |
+| SDK-04 | Phase 24 | Complete |
+| SDK-05 | Phase 24 | Complete |
+| SDK-06 | Phase 24 | Complete |
+| SDK-07 | Phase 24 | Complete |
 
 **Coverage:**
 
