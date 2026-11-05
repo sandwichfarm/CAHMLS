@@ -16,6 +16,8 @@
     coordinatorLabel: string;
   }
 
+  export type CoordinatorReachability = "online" | "connecting" | "offline" | "unknown";
+
   interface Props {
     messages: StoredMessage[];
     viewerPubkey: string;
@@ -32,6 +34,7 @@
     onActivateParticipantSurface: (key: string) => void;
     onDismissParticipantSurface: (key: string) => void;
     onJoinInvite: (invite: ChatInvite) => void;
+    inviteCoordinatorReachability?: (coordinatorPubkey: string) => CoordinatorReachability;
     participantRooms?: ParticipantRoomChoice[];
     onMention?: (participantPubkey: string, displayName: string) => void;
     onInviteToRoom?: (participantPubkey: string, room: ParticipantRoomChoice) => Promise<void>;
@@ -59,6 +62,7 @@
     onActivateParticipantSurface,
     onDismissParticipantSurface,
     onJoinInvite,
+    inviteCoordinatorReachability = () => "unknown",
     participantRooms = [],
     onMention,
     onInviteToRoom,
@@ -69,6 +73,7 @@
     followStatus = "idle",
     onFollow,
   }: Props = $props();
+  const componentId = $props.id();
 
   const first = $derived(messages[0]);
   const mine = $derived(first?.sender === viewerPubkey);
@@ -268,7 +273,7 @@
         {/if}
       </div>
       <div class="streak-messages">
-        {#each messages as message (message.id)}
+        {#each messages as message, messageIndex (message.id)}
           {@const reactions = reactionsFor(message.id)}
           {@const sharedInvite = parseInviteMessage(message.content)}
           {@const mentionedViewer = Boolean(message.recipientPubkeys?.includes(viewerPubkey.toLowerCase()))}
@@ -278,11 +283,17 @@
               {@const sharedHost = inviteHost(sharedInvite)}
               {@const groupName = sharedInvite.title || "Chat"}
               {@const coordinatorName = inviteCoordinatorName(sharedInvite)}
+              {@const inviteOnline = inviteCoordinatorReachability(sharedInvite.coordinatorPubkey) === "online"}
+              {@const inviteAvailabilityId = `${idPrefix}-${componentId}-invite-availability-${messageIndex}`}
               <button
+                class:unavailable={!inviteOnline}
                 class="shared-invite-action"
                 type="button"
                 aria-label={`Join ${groupName} on ${coordinatorName} by ${sharedHost.name}`}
-                onclick={() => onJoinInvite(sharedInvite)}
+                aria-describedby={!inviteOnline ? inviteAvailabilityId : undefined}
+                title={!inviteOnline ? "Coordinator is offline" : undefined}
+                disabled={!inviteOnline}
+                onclick={() => { if (inviteOnline) onJoinInvite(sharedInvite); }}
               >
                 <span class="shared-invite-copy">Join <strong>{groupName}</strong> on <strong>{coordinatorName}</strong></span>
                 <span class="shared-invite-host">
@@ -291,6 +302,7 @@
                   <span>{sharedHost.name}</span>
                 </span>
               </button>
+              {#if !inviteOnline}<span id={inviteAvailabilityId} class="sr-only">Coordinator is offline</span>{/if}
             {:else}
               <p>{message.content}</p>
             {/if}
@@ -321,7 +333,7 @@
       role="dialog"
       tabindex="-1"
       aria-label={`Actions for ${participantName}`}
-      use:viewportOverlay={{ anchor: actionTrigger, preferredSide: "above", align: mine ? "end" : "start", compactSheetBelow: 520, gutter: 16 }}
+      use:viewportOverlay={{ anchor: actionTrigger, preferredSide: "above", align: mine ? "end" : "start", compactSheetBelow: 900, gutter: 16 }}
       onkeydown={handleSurfaceKeydown}
     >
       <button id={`${idPrefix}-participant-mention`} type="button" onclick={() => void mentionParticipant()}>Mention</button>
@@ -350,7 +362,7 @@
       role="dialog"
       tabindex="-1"
       aria-label={`Invite ${participantName} to a room`}
-      use:viewportOverlay={{ anchor: actionTrigger, preferredSide: "above", align: mine ? "end" : "start", compactSheetBelow: 520, gutter: 16 }}
+      use:viewportOverlay={{ anchor: actionTrigger, preferredSide: "above", align: mine ? "end" : "start", compactSheetBelow: 900, gutter: 16 }}
       onkeydown={handleSurfaceKeydown}
     >
       <h2>Invite {participantName} to a room</h2>
@@ -422,11 +434,14 @@
   .message-bubble p { white-space: pre-wrap; overflow-wrap: anywhere; }
   .message-bubble.mentioned { box-shadow: inset 2px 0 #f1f58f; }
   .mentioned-you { display: block; margin: 0 0 4px; color: #f1f58f; font-size: 16px; font-weight: 600; letter-spacing: .08em; line-height: 1.2; text-transform: uppercase; }
-  .shared-invite-action { display: flex; width: 100%; min-height: 3.25rem; align-items: center; justify-content: space-between; gap: .8rem; border: 1px solid rgb(124 245 157 / .2); background: #101a13; padding: .65rem .7rem; color: #cfe8d5; text-align: left; transition: border-color .15s ease, background .15s ease, color .15s ease; }
+  .shared-invite-action { display: flex; width: 100%; min-height: 3.25rem; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid rgb(124 245 157 / .2); background: #101a13; padding: 8px; color: #cfe8d5; text-align: left; transition: border-color .15s ease, background .15s ease, color .15s ease; }
   .shared-invite-action:hover, .shared-invite-action:focus-visible { border-color: #7cf59d; outline: none; background: #14241a; color: #effff2; }
+  .shared-invite-action.unavailable { border-color: #34483a; background: #0d1310; color: #718277; cursor: not-allowed; }
+  .shared-invite-action.unavailable:hover, .shared-invite-action.unavailable:focus-visible { border-color: #34483a; background: #0d1310; color: #718277; outline: none; }
+  .shared-invite-action.unavailable .shared-invite-copy strong, .shared-invite-action.unavailable .shared-invite-host { color: #718277; }
   .shared-invite-copy { min-width: 0; line-height: 1.45; }
-  .shared-invite-copy strong { color: #b9fac8; font-weight: 700; }
-  .shared-invite-host { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .3rem; color: #8fa397; font-size: .58rem; }
+  .shared-invite-copy strong { color: #b9fac8; font-weight: 600; }
+  .shared-invite-host { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; color: #8fa397; font-size: 8px; }
   .shared-invite-host img { width: 1.35rem; height: 1.35rem; border: 1px solid rgb(124 245 157 / .2); background: #0b0e0d; object-fit: cover; }
   .message-bubble :global(.message-timestamp) { min-height: .65rem; margin-top: .18rem; }
   .mine .message-bubble :global(.message-reactions) { right: .75rem; left: auto; }
@@ -434,7 +449,7 @@
   @media (max-width: 520px) {
     .message-streak { max-width: 88%; gap: .45rem; }
     .message-bubble { padding-inline: .65rem; }
-    .shared-invite-action { align-items: flex-start; flex-direction: column; gap: .45rem; }
+    .shared-invite-action { align-items: flex-start; flex-direction: column; gap: 4px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .shared-invite-action { transition: none; }

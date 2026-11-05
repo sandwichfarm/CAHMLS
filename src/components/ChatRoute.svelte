@@ -15,11 +15,12 @@
   import { nostrSocialStore } from "../invites/nostr-social.svelte";
   import { userProfileStore } from "../identity/user-profile.svelte";
   import { channelPreferences } from "../notifications/channel-preferences.svelte";
-  import MessageGroup, { type ParticipantRoomChoice } from "./MessageGroup.svelte";
+  import MessageGroup, { type CoordinatorReachability, type ParticipantRoomChoice } from "./MessageGroup.svelte";
   import RoomActionsMenu from "./RoomActionsMenu.svelte";
   import RoomHostBadge from "./RoomHostBadge.svelte";
   import RoomRemovalDialog from "./RoomRemovalDialog.svelte";
   import WorkspaceNav from "./WorkspaceNav.svelte";
+  import { mountAppVisualViewport } from "./app-visual-viewport";
 
   interface Props {
     currentUrl: string;
@@ -33,6 +34,7 @@
     embedded?: boolean;
     onContextChange?: (context: ChatPaneContext | null) => void;
     onRoomStored?: (room: StoredRoom) => void;
+    inviteCoordinatorReachability?: (coordinatorPubkey: string) => CoordinatorReachability;
   }
 
   interface RoomRemovalTarget {
@@ -52,6 +54,7 @@
     embedded = false,
     onContextChange,
     onRoomStored,
+    inviteCoordinatorReachability = () => "unknown",
   }: Props = $props();
   let invite = $state<ChatInvite | null>(null);
   let room = $state<StoredRoom | null>(null);
@@ -432,6 +435,7 @@
   }
 
   onMount(() => {
+    const visualViewport = embedded ? undefined : mountAppVisualViewport(document.documentElement);
     disposed = false;
     const handleRoomsChanged = (event: Event) => {
       const detail = event instanceof CustomEvent ? event.detail as { action?: string; roomId?: string; coordinatorPubkey?: string } : undefined;
@@ -453,6 +457,7 @@
     document.addEventListener("visibilitychange", acknowledgeOnVisibility);
     acknowledgeVisibleRoom();
     return () => {
+      visualViewport?.destroy();
       window.removeEventListener(ROOMS_CHANGED_EVENT, handleRoomsChanged);
       document.removeEventListener("visibilitychange", acknowledgeOnVisibility);
     };
@@ -837,6 +842,7 @@
                 onActivateParticipantSurface={(key) => activeParticipantSurfaceKey = key}
                 onDismissParticipantSurface={(key) => { if (activeParticipantSurfaceKey === key) activeParticipantSurfaceKey = null; }}
                 onJoinInvite={(sharedInvite) => navigate(createSameShellAutoJoinHref(window.location.origin, sharedInvite))}
+                {inviteCoordinatorReachability}
                 participantRooms={participantRoomChoices()}
                 onMention={mentionParticipant}
                 onInviteToRoom={inviteParticipantToRoom}
@@ -878,7 +884,7 @@
 <style>
   .ignored-streak-disclosure { width: 100%; border: 1px solid #293832; background: #101614; padding: 8px 16px; color: #82958a; font-size: 14px; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }
   .ignored-streak-disclosure:hover, .ignored-streak-disclosure:focus-visible { border-color: #7cf59d; color: #dfffe7; outline: 2px solid #7cf59d; outline-offset: 2px; }
-  .chat-page { width: 100%; height: 100dvh; max-height: 100dvh; }
+  .chat-page { width: 100%; height: var(--app-visual-height, 100dvh); max-height: var(--app-visual-height, 100dvh); overscroll-behavior: contain; }
   .chat-page.embedded { position: static; inset: auto; width: 100%; min-width: 0; height: 100%; max-width: none; max-height: 100%; background: #101614; }
   .chat-page.embedded > [data-testid="cached-room-view"] { width: 100%; min-width: 0; max-width: none; margin-inline: 0; border-inline: 0; }
   .identity-pending > div { display: grid; max-width: 28rem; justify-items: center; gap: .65rem; text-align: center; }
@@ -924,7 +930,7 @@
   .emoji-button:disabled { cursor: not-allowed; opacity: .28; }
   .room-pane { position: relative; }
   @media (max-width: 900px) {
-    .chat-page { position: fixed; inset: 0; width: 100%; height: 100dvh; max-height: 100dvh; overscroll-behavior: none; }
+    .chat-page { position: fixed; inset: 0; width: 100%; height: var(--app-visual-height, 100dvh); max-height: var(--app-visual-height, 100dvh); overscroll-behavior: contain; }
     .chat-page.embedded { position: static; inset: auto; height: 100%; max-height: 100%; }
     .chat-global-nav { position: relative; z-index: 60; display: flex; min-height: 3.25rem; align-items: center; gap: .35rem; padding: max(.35rem, env(safe-area-inset-top)) .45rem .35rem; }
     .chat-workspace-nav { min-width: 0; overflow: visible; }
@@ -934,10 +940,10 @@
     .chat-workspace-nav :global(.context-copy) { min-width: 0; overflow: hidden; }
     .chat-workspace-nav :global(.context-copy strong) { max-width: none; }
     .chat-workspace-nav :global(.room-utilities), .chat-workspace-nav :global(.remote-badge) { display: none; }
-    .chat-workspace-nav :global(.browse-button) { min-width: 2.15rem; height: 2.25rem; justify-content: center; padding: .35rem; }
+    .chat-workspace-nav :global(.browse-button) { min-width: 44px; height: 44px; justify-content: center; padding: .35rem; }
     .chat-workspace-nav :global(.browse-label) { display: none; }
     .mobile-primary-actions { display: flex; flex: 0 0 auto; align-items: center; gap: .15rem; }
-    .mobile-primary-actions > * { width: 2.25rem; height: 2.25rem; flex: 0 0 auto; }
+    .mobile-primary-actions > * { width: 44px; height: 44px; flex: 0 0 auto; }
     .mobile-connection { display: grid; place-items: center; border: 1px solid transparent; }
     .mobile-connection > span { width: .5rem; height: .5rem; border-radius: 999px; background: #7cf59d; box-shadow: 0 0 7px rgb(124 245 157 / .3); }
     .mobile-connection.offline > span { background: #f4a85f; box-shadow: 0 0 7px rgb(244 168 95 / .22); }
@@ -960,11 +966,11 @@
     .remote-resume-qr { flex-direction: row; align-items: center; }
     .remote-resume-qr img { width: 5.5rem; height: 5.5rem; }
     [data-testid="guest-message-list"] { min-block-size: 6rem; padding: .75rem .65rem; overscroll-behavior: contain; }
-    .chat-composer { padding: .45rem .55rem; }
+    .chat-composer { padding: .45rem .55rem max(.45rem, env(safe-area-inset-bottom)); }
     .composer-row { gap: .35rem; }
     .composer-row .guest-input { padding: .58rem .65rem; }
     .composer-row .primary-button { padding: .58rem .72rem; }
-    .emoji-button { min-width: 2rem; min-height: 2rem; padding: .3rem .45rem; }
+    .emoji-button { min-width: 44px; min-height: 44px; padding: .3rem .45rem; }
     .composer-status { margin-top: .35rem; font-size: .58rem; }
     .composer-status:not(.unavailable) { display: none; }
   }
@@ -983,7 +989,7 @@
   @media (max-width: 900px) and (max-height: 520px) {
     .chat-global-nav { min-height: 2.75rem; padding-top: max(.2rem, env(safe-area-inset-top)); padding-bottom: .2rem; }
     .chat-workspace-nav :global(.brand-copy span), .chat-workspace-nav :global(.context-copy > span) { display: none; }
-    .chat-workspace-nav :global(.browse-button), .mobile-primary-actions > * { height: 2.15rem; }
+    .chat-workspace-nav :global(.browse-button), .mobile-primary-actions > * { height: 44px; }
     .chat-workspace-nav :global(.room-switcher) { top: calc(max(.2rem, env(safe-area-inset-top)) + 2.55rem); max-height: calc(100dvh - 2.8rem); }
     .reconnect-panel { max-height: min(7rem, 24dvh); }
     [data-testid="guest-message-list"] { min-block-size: 4.5rem; padding-block: .5rem; }

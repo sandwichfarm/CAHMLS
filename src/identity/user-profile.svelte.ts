@@ -15,6 +15,8 @@ import { retireAnonymousMemberships, type MembershipRetirementJournal } from "..
 export const PROFILE_RELAYS = ["wss://purplepag.es", "wss://relay.damus.io"] as const;
 export const NIP46_CONNECT_RELAYS = ["wss://bucket.coracle.social"] as const;
 const NIP07_SESSION_STORAGE_KEY = "cordn:v1:nip07-session";
+const NIP07_STARTUP_WAIT_MS = 1_000;
+const NIP07_STARTUP_POLL_MS = 25;
 export const ANONYMOUS_IDENTITY_RECOVERY_STORAGE_KEY = "cordn:v1:anonymous-identity-recovery";
 
 export type UserAuthMethod = "anonymous" | "nip07" | "nip46";
@@ -239,7 +241,7 @@ export class UserProfileStore {
   }
 
   private async restoreNip07Session(): Promise<boolean> {
-    if (this.method !== "anonymous" || !hasStoredNip07Session() || !this.nip07Available) return false;
+    if (this.method !== "anonymous" || !hasStoredNip07Session() || !(await waitForNip07Availability())) return false;
     try {
       await this.connectNip07();
       return true;
@@ -446,6 +448,16 @@ function clearStoredNip07Session(): void {
   } catch {
     // Local logout still succeeds when browser storage is unavailable.
   }
+}
+
+async function waitForNip07Availability(): Promise<boolean> {
+  if (typeof window === "undefined" || "nostr" in window) return typeof window !== "undefined" && "nostr" in window;
+  const deadline = Date.now() + NIP07_STARTUP_WAIT_MS;
+  while (Date.now() < deadline) {
+    await new Promise<void>((resolve) => window.setTimeout(resolve, NIP07_STARTUP_POLL_MS));
+    if ("nostr" in window) return true;
+  }
+  return "nostr" in window;
 }
 
 function browserStorage(): Storage | null {

@@ -224,7 +224,7 @@ test("locks a confirmed rotation until the replacement identity succeeds", async
   const authority = await seedAnonymousAuthority(page, original.pubkey, "rotation-in-flight-room");
   const dialog = await openRotationDialog(page);
 
-  await expect(dialog).toContainText("1 local room membership will be removed.");
+  await expect(dialog).toContainText("You will lose access to 1 channel. It will be moved to History.");
   await dialog.getByRole("button", { name: "Rotate identity" }).click();
   await expect(dialog).toBeHidden();
 
@@ -249,6 +249,11 @@ test("locks a confirmed rotation until the replacement identity succeeds", async
     stateBase64: "",
     keyPackage: { reference: "", publicBase64: "", privateBase64: "" },
   });
+  const history = page.getByTestId("sidebar-history");
+  await expect(history.getByRole("button", { name: /History 1/ })).toHaveAttribute("aria-expanded", "false");
+  await history.getByRole("button", { name: /History 1/ }).click();
+  await expect(history).toContainText("Rotation boundary room");
+  await expect(history).toContainText("Identity retired");
 });
 
 test("locks explicit recovery until the new local identity succeeds", async ({ page }) => {

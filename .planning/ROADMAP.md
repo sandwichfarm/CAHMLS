@@ -20,6 +20,9 @@ and closes with repeatable delivery guidance and automated proof.
 - [ ] **Phase 21: First-Run Coordinator Identity & Profile** - Require deliberate operator identity and coordinator naming before first startup.
 - [x] **Phase 22: Coordinator-Grouped Sidebar** - Replace the selected-coordinator switcher with stable, lightweight coordinator cards and collapsed room history. (completed 2026-08-06)
 - [x] **Phase 23: Bounded Gift-Wrap Delivery** - Stop unavailable relays and room polling from accumulating immortal ContextVM gift-wrap publications.
+- [x] **Phase 25: Favorite Groups & Invite Availability** - Add persistent duplicate favorites and prevent room-invite actions while their coordinator is offline. (completed 2026-08-07)
+- [x] **Phase 26: Offline Coordinator Room Disclosure** - Collapse offline coordinator rooms into an animated, accessible disclosure. (completed 2026-08-07)
+- [ ] **Phase 27: Mobile-Optimized Experience** - Make every coordinator and chat journey touch-native, redesign mobile navigation, and move durable coordinator persistence to IndexedDB.
 
 ## Phase Details
 
@@ -40,6 +43,68 @@ and closes with repeatable delivery guidance and automated proof.
 - [x] 15-01-PLAN.md
 - [x] 15-02-PLAN.md
 - [x] 15-03-PLAN.md
+
+**UI hint**: yes
+
+### Phase 25: Favorite Groups & Invite Availability
+
+**Goal**: Frequently used groups stay one click away without leaving their coordinator grouping, and room invites never imply that an offline coordinator can currently be joined.
+**Depends on**: Phase 22, Phase 24
+**Requirements**: FAV-01, FAV-02, INVMSG-02
+**Success Criteria** (what must be TRUE):
+
+  1. Hovering or keyboard-focusing any active group row reveals a star toggle, with the same toggle available in the room’s three-dot menu.
+  2. Favorite state persists by exact coordinator and room identity and produces a duplicate Favorites section above coordinator cards without removing the original row.
+  3. Favorite duplicates navigate and expose the same room actions as their source rows, and unfavoriting either copy removes only the Favorites duplicate.
+  4. Invite messages are enabled only for coordinators known online; offline, unknown, and connecting states render a subdued disabled action with a not-allowed cursor and the reason “Coordinator is offline.”
+
+**Plans**: 1/1 plans executed
+
+- [x] 25-01-PLAN.md
+
+**UI hint**: yes
+
+### Phase 26: Offline Coordinator Room Disclosure
+
+**Goal**: Offline coordinators stay visually compact while their historical chats remain immediately reachable on deliberate hover or keyboard interaction.
+**Depends on**: Phase 22, Phase 25
+**Requirements**: SIDE-07
+**Success Criteria** (what must be TRUE):
+
+  1. An offline remote coordinator with rooms initially renders a grammatically correct “1 chat offline” or “N chats offline” summary instead of room rows.
+  2. Hovering the coordinator card reveals its existing room rows with restrained motion and keeps them available while the pointer traverses the card.
+  3. Keyboard focus reveals the same rooms without requiring a pointer, existing room navigation remains unchanged, and reduced-motion users receive an immediate transition.
+  4. Online, connecting, unknown, local, and Favorites presentations retain their existing behavior.
+
+**Plans**: 1/1 plans executed
+
+- [x] 26-01-PLAN.md
+
+- [ ] 26-01-PLAN.md
+
+**UI hint**: yes
+
+### Phase 27: Mobile-Optimized Experience
+
+**Goal**: A phone user can complete the entire CAHMLS coordinator and participant lifecycle reliably with touch, responsive navigation, and durable mobile-safe persistence.
+**Depends on**: Phase 15, Phase 18, Phase 21, Phase 22, Phase 23, Phase 24, Phase 25, Phase 26
+**Requirements**: MOBILE-01, MOBILE-02, MOBILE-03, MOBILE-04, MOBILE-05, MOBILE-06, MOBILE-07
+**Success Criteria** (what must be TRUE):
+
+  1. Fresh setup, coordinator start/stop/restart, room creation and management, invitations and admission, messaging, reactions, notifications, settings, identity actions, and navigation all work by tap in touch-enabled browser contexts.
+  2. Phone portrait, landscape, short-height, and onscreen-keyboard layouts keep the active conversation primary, all actions reachable, touch targets at least 44 CSS pixels, and every drawer, sheet, dialog, and popover contained.
+  3. Coordinator snapshots persist asynchronously in identity-scoped IndexedDB, restore after reload, flush before a completed stop, and never silently attach legacy state to the wrong coordinator identity.
+  4. Denied, unavailable, corrupt, and quota-exhausted persistence paths fail safely with bounded recovery or an explicitly temporary session, without recursive startup failure or secret-bearing errors.
+  5. Chromium and WebKit mobile-device suites prove one complete host journey and a real two-client encrypted chat journey, and all repository quality and Cordn interoperability gates pass.
+
+**Plans**: 3/4 plans executed
+
+Plans:
+
+- [x] 27-01-PLAN.md — Replace coordinator snapshot persistence with validated identity-scoped IndexedDB, flush-before-stop, and truthful recovery.
+- [x] 27-02-PLAN.md — Converge host and guest on one shared mobile Room browser and one deterministic overlay lifecycle.
+- [x] 27-03-PLAN.md — Harden touch targets, hoverless discovery, action sheets, VisualViewport behavior, safe areas, and responsive containment.
+- [ ] 27-04-PLAN.md — Prove complete host and two-client journeys in touch-enabled mobile Chromium and WebKit and run every quality/interoperability gate.
 
 **UI hint**: yes
 
@@ -254,3 +319,5 @@ Plans:
 | 22. Coordinator-Grouped Sidebar | 2/2 | Complete | 2026-08-06 |
 | 23. Bounded Gift-Wrap Delivery | 2/2 | Complete | 2026-08-06 |
 | 24. Chat User Interactions | 6/6 | Complete    | 2026-08-07 |
+| 25. Favorite Groups & Invite Availability | 2/2 | Complete    | 2026-08-07 |
+| 26. Offline Coordinator Room Disclosure | 1/1 | Complete | 2026-08-07 |

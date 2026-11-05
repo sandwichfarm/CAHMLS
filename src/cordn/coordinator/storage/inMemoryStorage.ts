@@ -73,6 +73,17 @@ export interface CoordinatorStorageSnapshot {
   }>;
 }
 
+/**
+ * Browser persistence is deliberately outside Cordn's synchronous storage
+ * contract. Mutations remain synchronous; an immutable snapshot is queued by
+ * the owning browser adapter and joined later by the lifecycle owner.
+ */
+export interface CoordinatorSnapshotLifecycle {
+  queueSnapshot(snapshot: CoordinatorStorageSnapshot): void;
+  flush(): Promise<void>;
+  close(): Promise<void>;
+}
+
 function createGroupLog(groupId: string, epoch: bigint): GroupLog {
   return {
     nextCursor: 1,
@@ -98,6 +109,7 @@ export class InMemoryCoordinatorStorage implements CoordinatorStorage {
   constructor(
     snapshot?: CoordinatorStorageSnapshot | null,
     private readonly onChange?: (snapshot: CoordinatorStorageSnapshot) => void,
+    private readonly snapshotLifecycle?: CoordinatorSnapshotLifecycle,
   ) {
     if (snapshot) {
       this.restoreSnapshot(snapshot);
@@ -446,7 +458,17 @@ export class InMemoryCoordinatorStorage implements CoordinatorStorage {
     return this.groups.get(groupId)?.routing ?? null;
   }
 
-  close(): void {}
+  /** Wait for the browser adapter without making Cordn storage calls async. */
+  flush(): Promise<void> {
+    return this.snapshotLifecycle?.flush() ?? Promise.resolve();
+  }
+
+  close(): void {
+    // Transport lifecycle callers flush before close. Retain a best-effort
+    // join for legacy synchronous callers so a close never deliberately drops
+    // an already queued snapshot.
+    void this.snapshotLifecycle?.close();
+  }
 
   private consumeKeyPackageByIdentity(
     stablePubkey: string,
@@ -575,7 +597,9 @@ export class InMemoryCoordinatorStorage implements CoordinatorStorage {
   }
 
   private persist(): void {
-    this.onChange?.(this.toSnapshot());
+    const snapshot = this.toSnapshot();
+    this.onChange?.(snapshot);
+    this.snapshotLifecycle?.queueSnapshot(snapshot);
   }
 
   private assertGroupAvailable(groupId: string): void {

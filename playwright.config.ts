@@ -20,6 +20,31 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
+    {
+      name: "mobile-chromium",
+      testMatch: /mobile-optimized-experience\.spec\.ts/,
+      use: {
+        ...devices["Pixel 5"],
+        browserName: "chromium",
+        isMobile: true,
+        hasTouch: true,
+      },
+    },
+    // WebKit runs this MLS/relay path roughly an order of magnitude slower
+    // than Chromium, so its parity run is opt-in via MOBILE_WEBKIT=1 rather
+    // than part of the default gate. The journeys themselves pass on WebKit.
+    ...(process.env.MOBILE_WEBKIT
+      ? [{
+          name: "mobile-webkit",
+          testMatch: /mobile-optimized-experience\.spec\.ts/,
+          use: {
+            ...devices["iPhone 13"],
+            browserName: "webkit" as const,
+            isMobile: true,
+            hasTouch: true,
+          },
+        }]
+      : []),
   ],
   webServer: {
     command: `VITE_E2E=1 pnpm build && vite preview --host 127.0.0.1 --port ${previewPort}`,

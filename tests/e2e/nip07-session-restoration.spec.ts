@@ -39,7 +39,11 @@ test.afterAll(async () => {
   await relay.close();
 });
 
-async function installNip07BrowserMock(page: Page, identity: Nip07BrowserMockIdentity): Promise<void> {
+async function installNip07BrowserMock(
+  page: Page,
+  identity: Nip07BrowserMockIdentity,
+  restoredSessionInjectionDelayMs = 0,
+): Promise<void> {
   const { profileEvent, pubkey, secretKey } = identity;
   await page.exposeFunction(
     "__nip07SignEvent",
@@ -53,7 +57,7 @@ async function installNip07BrowserMock(page: Page, identity: Nip07BrowserMockIde
     const conversationKey = nip44.v2.utils.getConversationKey(secretKey, pubkey);
     return nip44.v2.decrypt(ciphertext, conversationKey);
   });
-  await page.addInitScript(({ pubkey, profileEvent }) => {
+  await page.addInitScript(({ pubkey, profileEvent, restoredSessionInjectionDelayMs }) => {
     const testWindow = window as typeof window & {
       __nativeWebSocket?: typeof WebSocket;
       __nip07SignEvent?: (event: unknown) => Promise<unknown>;
@@ -114,7 +118,7 @@ async function installNip07BrowserMock(page: Page, identity: Nip07BrowserMockIde
       },
     });
 
-    Object.defineProperty(window, "nostr", {
+    const installNip07 = () => Object.defineProperty(window, "nostr", {
       configurable: true,
       value: {
         getPublicKey: async () => pubkey,
@@ -134,8 +138,13 @@ async function installNip07BrowserMock(page: Page, identity: Nip07BrowserMockIde
         },
       },
     });
+    if (localStorage.getItem("cordn:v1:nip07-session") && restoredSessionInjectionDelayMs > 0) {
+      window.setTimeout(installNip07, restoredSessionInjectionDelayMs);
+    } else {
+      installNip07();
+    }
     Object.defineProperty(window, "WebSocket", { configurable: true, value: RoutedWebSocket });
-  }, { pubkey, profileEvent });
+  }, { pubkey, profileEvent, restoredSessionInjectionDelayMs });
 }
 
 async function openCoordinatorSettings(page: Page): Promise<Locator> {
@@ -287,13 +296,13 @@ test("rotates a zero-membership local identity only after the approved confirmat
 
   await expect(dialog).toBeHidden();
   await expect(profile.locator("img")).not.toHaveAttribute("src", original ?? "");
-  await expect(page.getByText("Identity rotated. Local room access was removed.")).toBeAttached();
+  await expect(page.getByText("Identity rotated. Previous channels were moved to History.")).toBeAttached();
 });
 
 test("restores NIP-07 before a legacy invite is consumed in the unified root shell", async ({ page, browser }) => {
   test.setTimeout(90_000);
   const mockIdentity = createNip07BrowserMockIdentity();
-  await installNip07BrowserMock(page, mockIdentity);
+  await installNip07BrowserMock(page, mockIdentity, 75);
   await page.goto("/");
 
   const profile = page.getByTestId("user-profile");

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 8
+open_count: 12
 waived_count: 0
 fixed_count: 0
-total_count: 8
-last_updated: 2026-08-06T22:13:03.599Z
+total_count: 12
+last_updated: 2026-08-07T11:25:40.782Z
 ---
 
 # Broken Windows Ledger
@@ -23,6 +23,10 @@ last_updated: 2026-08-06T22:13:03.599Z
 | 6 | 24 | unrun-verify | tests/e2e/workspace-lifecycle.spec.ts |  | Full pnpm test:e2e could not complete because the shared mock relay port 8765 was occupied and the clean retry left a Playwright worker running; rerun at Phase 24 close-out. | open |  | 2026-08-06T18:47:59.271Z |  |
 | 7 | 24 | unrun-verify | tests/e2e |  | Complete pnpm test:e2e left a worker running; focused Phase 24 browser coverage passed. | open |  | 2026-08-06T19:04:57.470Z |  |
 | 8 | 24 | deviation | src/components/MessageGroup.svelte |  | Removed raw participant and room identifiers from affected DOM IDs while preserving focus restoration. | open |  | 2026-08-06T22:13:03.599Z |  |
+| 9 | 27 | deviation | tests/e2e/workspace-lifecycle.spec.ts | 2259 | Full lifecycle suite invite-only delivery scenario timed out outside storage lifecycle changes. | open |  | 2026-08-07T09:54:58.932Z |  |
+| 10 | 27 | deviation | tests/e2e/workspace-lifecycle.spec.ts |  | Removed unused Playwright locator found by lint | open |  | 2026-08-07T11:25:40.675Z |  |
+| 11 | 27 | deviation | tests/e2e/workspace-lifecycle.spec.ts |  | Dialog-boundary test now follows restored drawer state | open |  | 2026-08-07T11:25:40.728Z |  |
+| 12 | 27 | deviation | tests/e2e/workspace-lifecycle.spec.ts |  | Offline disclosure test accepts completed exit transition | open |  | 2026-08-07T11:25:40.782Z |  |
 
 ````json
 [
@@ -120,6 +124,54 @@ last_updated: 2026-08-06T22:13:03.599Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-06T22:13:03.599Z",
+    "resolved_at": null
+  },
+  {
+    "id": 9,
+    "kind": "deviation",
+    "phase": "27",
+    "file": "tests/e2e/workspace-lifecycle.spec.ts",
+    "line": 2259,
+    "description": "Full lifecycle suite invite-only delivery scenario timed out outside storage lifecycle changes.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-07T09:54:58.932Z",
+    "resolved_at": null
+  },
+  {
+    "id": 10,
+    "kind": "deviation",
+    "phase": "27",
+    "file": "tests/e2e/workspace-lifecycle.spec.ts",
+    "line": null,
+    "description": "Removed unused Playwright locator found by lint",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-07T11:25:40.675Z",
+    "resolved_at": null
+  },
+  {
+    "id": 11,
+    "kind": "deviation",
+    "phase": "27",
+    "file": "tests/e2e/workspace-lifecycle.spec.ts",
+    "line": null,
+    "description": "Dialog-boundary test now follows restored drawer state",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-07T11:25:40.728Z",
+    "resolved_at": null
+  },
+  {
+    "id": 12,
+    "kind": "deviation",
+    "phase": "27",
+    "file": "tests/e2e/workspace-lifecycle.spec.ts",
+    "line": null,
+    "description": "Offline disclosure test accepts completed exit transition",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-07T11:25:40.782Z",
     "resolved_at": null
   }
 ]

@@ -114,8 +114,18 @@ export async function startMockRelay(port = 8765): Promise<MockRelay> {
         socket.close();
       }
 
+      // A client that never completes the close handshake (for example a
+      // browser context torn down mid-frame) would otherwise hold the server
+      // open forever; force-terminate stragglers after a bounded grace period.
+      const forceTerminate = setTimeout(() => {
+        for (const socket of sockets) {
+          socket.terminate();
+        }
+      }, 2_000);
+
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {
+          clearTimeout(forceTerminate);
           if (error) {
             reject(error);
             return;

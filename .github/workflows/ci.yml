@@ -11,9 +11,10 @@ jobs:
   test:
     name: lint-unit-build-e2e
     runs-on: ubuntu-latest
-    # The full Chromium suite currently takes about five minutes by itself.
+    # The full Chromium suite currently takes about five minutes by itself and
+    # the dedicated mobile touch project adds two more journeys.
     # Leave enough headroom for dependency/browser installation and slower runners.
-    timeout-minutes: 12
+    timeout-minutes: 14
 
     steps:
       - name: Checkout

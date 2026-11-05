@@ -5,7 +5,7 @@ import { NostrServerTransport, type OpenStreamWriter } from "@contextvm/sdk/tran
 import type { NostrEvent } from "nostr-tools";
 import type { BrowserCoordinatorOptions } from "../config/config.svelte";
 import { createCoordinator, type Coordinator } from "../cordn/coordinator";
-import { createBrowserCoordinatorStorage } from "../cordn/coordinator/storage/browserSqliteStorage";
+import { createBrowserCoordinatorStorage } from "../cordn/coordinator/storage/indexedDbSnapshotStorage";
 import { BrowserNostrSigner } from "../crypto/browser-nostr-signer";
 import {
   createRequiredRelayPool,
@@ -25,6 +25,7 @@ export interface RunningTransport {
   transport: NostrServerTransport;
   coordinator: Coordinator;
   adapter: CoordinatorAdapter;
+  flush?: () => Promise<void>;
   close: () => void;
 }
 
@@ -196,10 +197,12 @@ export class TransportFactory {
       transport,
       coordinator,
       adapter,
+      flush: () => storage.flush(),
       close: () => {
         adapter.close();
         closeIfPresent(transport);
         closeIfPresent(server);
+        storage.close();
       },
     };
   }

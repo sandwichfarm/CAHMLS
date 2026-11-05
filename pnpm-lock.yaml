@@ -20,9 +20,6 @@ importers:
       '@noble/secp256k1':
         specifier: 3.1.0
         version: 3.1.0
-      '@sqlite.org/sqlite-wasm':
-        specifier: 3.53.0-build1
-        version: 3.53.0-build1
       applesauce-signers:
         specifier: ^6.2.2
         version: 6.2.2(@capacitor/core@7.6.8)(typescript@5.9.3)
@@ -440,10 +437,6 @@ packages:
 
   '@scure/bip39@2.0.1':
     resolution: {integrity: sha512-PsxdFj/d2AcJcZDX1FXN3dDgitDDTmwf78rKZq1a6c1P1Nan1X/Sxc7667zU3U+AN60g7SxxP0YCVw2H/hBycg==}
-
-  '@sqlite.org/sqlite-wasm@3.53.0-build1':
-    resolution: {integrity: sha512-PfWPWN2n+/37doa8oh2/oUXk4OOsRYZsxc1W1sDXIGb/Pu5Yrb+f2eyYpgQMGITVX7HVgxhs9P18Rc6I97ym/g==}
-    engines: {node: '>=22'}
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
@@ -1916,8 +1909,6 @@ snapshots:
     dependencies:
       '@noble/hashes': 2.0.1
       '@scure/base': 2.0.0
-
-  '@sqlite.org/sqlite-wasm@3.53.0-build1': {}
 
   '@standard-schema/spec@1.1.0': {}
 

@@ -11,10 +11,12 @@
     inviteUrl: string;
     removalMode: "delete" | "leave";
     onRemove: (origin?: HTMLButtonElement) => void;
+    favorite?: boolean;
+    onFavorite?: (origin?: HTMLButtonElement) => void;
     sidebar?: boolean;
   }
 
-  let { roomTitle, roomId, coordinatorPubkey, inviteUrl, removalMode, onRemove, sidebar = false }: Props = $props();
+  let { roomTitle, roomId, coordinatorPubkey, inviteUrl, removalMode, onRemove, favorite = false, onFavorite, sidebar = false }: Props = $props();
   const preferenceKey = $derived(roomIdentityKey(coordinatorPubkey, roomId));
   let open = $state(false);
   let trigger: HTMLButtonElement | undefined = $state();
@@ -67,8 +69,20 @@
 
   {#if open}
     <button class="room-actions-scrim" type="button" aria-label="Close room actions" onclick={() => close(true)}></button>
-    <div use:viewportOverlay={{ anchor: trigger, preferredSide: "below", align: "end", compactSheetBelow: 520 }} class="room-actions-menu" role="menu" aria-label={`Room actions for ${roomTitle}`}>
+    <div use:viewportOverlay={{ anchor: trigger, preferredSide: "below", align: "end", compactSheetBelow: 900 }} class="room-actions-menu" role="menu" aria-label={`Room actions for ${roomTitle}`}>
       <header><span>Room actions</span><strong># {roomTitle}</strong></header>
+      {#if onFavorite}
+        <button
+          class="room-menu-action room-favorite-action"
+          type="button"
+          role="menuitem"
+          aria-label={favorite ? "Remove from favorites" : "Add to favorites"}
+          onclick={() => { close(); onFavorite(trigger); }}
+        >
+          <span>{favorite ? "Remove from favorites" : "Add to favorites"}</span>
+          <span aria-hidden="true">★</span>
+        </button>
+      {/if}
       <div class="room-connection-details">
         <button
           class="room-copy-action"
@@ -109,32 +123,39 @@
 </div>
 
 <style>
-  .room-actions { position: absolute; z-index: 96; top: .65rem; right: .65rem; }
+  .room-actions { position: absolute; z-index: 96; top: 8px; right: 8px; }
   .room-actions.sidebar { position: relative; top: auto; right: auto; z-index: 2; }
-  .more-room-actions { position: relative; z-index: 96; display: grid; width: 2.65rem; height: 2.65rem; place-items: center; border: 0; background: transparent; color: #91a59a; font-size: .68rem; font-weight: 800; letter-spacing: .08em; transition: background .15s ease, color .15s ease; }
+  .more-room-actions { position: relative; z-index: 96; display: grid; width: 44px; height: 44px; place-items: center; border: 0; background: transparent; color: #91a59a; font-size: 12px; font-weight: 600; letter-spacing: .08em; transition: background .15s ease, color .15s ease; }
   .sidebar .more-room-actions { width: 2.75rem; height: 2.75rem; }
   .more-room-actions:hover, .more-room-actions:focus-visible, .more-room-actions[aria-expanded="true"] { background: #111a14; color: #effff2; outline: 2px solid #7cf59d; outline-offset: -2px; }
   .room-actions-scrim { position: fixed; z-index: 94; inset: 0; border: 0; background: rgb(0 0 0 / .32); cursor: default; backdrop-filter: blur(1px); }
-  .room-actions-menu { position: absolute; z-index: 95; top: calc(100% + .45rem); right: 0; display: grid; width: min(23rem, calc(100vw - 1rem)); border: 1px solid #496451; background: rgb(7 12 9 / .99); box-shadow: 0 20px 54px rgb(0 0 0 / .62); padding: .35rem; }
-  .room-actions-menu header { display: grid; gap: .22rem; border-bottom: 1px solid #293832; padding: .55rem .6rem .65rem; }
-  .room-actions-menu header span { color: #718277; font-size: .5rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-  .room-actions-menu header strong { overflow: hidden; color: #dfffe7; font-size: .68rem; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+  .room-actions-menu { position: absolute; z-index: 95; top: calc(100% + 8px); right: 0; display: grid; width: min(23rem, calc(100vw - 1rem)); border: 1px solid #496451; background: rgb(7 12 9 / .99); box-shadow: 0 20px 54px rgb(0 0 0 / .62); padding: 4px; }
+  .room-actions-menu header { display: grid; gap: 4px; border-bottom: 1px solid #293832; padding: 8px; }
+  .room-actions-menu header span { color: #718277; font-size: 8px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+  .room-actions-menu header strong { overflow: hidden; color: #dfffe7; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
   .room-connection-details { display: grid; gap: 1px; border-bottom: 1px solid #293832; background: #1b2820; padding-bottom: 1px; }
-  .room-copy-action { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .75rem; background: #080e0a; padding: .6rem; text-align: left; }
+  .room-copy-action { display: grid; min-width: 0; min-height: 44px; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; background: #080e0a; padding: 8px; text-align: left; }
   .room-copy-action:hover, .room-copy-action:focus-visible { background: #112018; outline: none; }
-  .room-copy-action > span { display: grid; min-width: 0; gap: .2rem; }
-  .room-copy-action small { color: #718277; font-size: .48rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
-  .room-copy-action code { display: -webkit-box; overflow: hidden; color: #a8c5af; font-size: .52rem; line-height: 1.35; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-  .room-copy-action > strong { color: #7cf59d; font-size: .5rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-  .room-menu-action { display: flex; min-height: 2.55rem; align-items: center; justify-content: space-between; gap: 1rem; padding: .6rem; color: #b9cbbf; text-align: left; font-size: .65rem; }
+  .room-copy-action > span { display: grid; min-width: 0; gap: 4px; }
+  .room-copy-action small { color: #718277; font-size: 8px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+  .room-copy-action code { display: -webkit-box; overflow: hidden; color: #a8c5af; font-size: 8px; line-height: 1.35; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .room-copy-action > strong { color: #7cf59d; font-size: 8px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+  .room-menu-action { display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: 1rem; padding: 8px; color: #b9cbbf; text-align: left; font-size: 12px; }
   .room-menu-action:hover, .room-menu-action:focus-visible { background: #142018; color: #effff2; outline: none; }
-  .room-menu-action > span:last-child { color: #718277; font-size: .52rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  .room-menu-action > span:last-child { color: #718277; font-size: 8px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
   .room-menu-action.delete { color: #ffaaa3; }
   .room-menu-action.delete:hover, .room-menu-action.delete:focus-visible { background: #21110f; }
-  .room-preference { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .7rem; padding: .55rem .6rem; color: #b9cbbf; font-size: .62rem; }
-  .room-preference select { border: 1px solid #34483a; background: #0b110d; padding: .35rem .45rem; color: #dfffe7; font-size: .58rem; }
+  .room-favorite-action > span:last-child { color: #64766b; }
+  .room-preference { display: grid; min-height: 44px; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px; color: #b9cbbf; font-size: 10px; }
+  .room-preference select { min-height: 32px; border: 1px solid #34483a; background: #0b110d; padding: 4px 8px; color: #dfffe7; font-size: 10px; }
+
+  @media (max-width: 900px) {
+    .room-actions-menu { border-color: #496451; padding: 8px max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+    .room-actions-menu header { position: sticky; top: 0; background: #071009; }
+  }
 
   @media (max-width: 520px) {
-    .room-actions { top: .45rem; right: .45rem; }
+    .room-actions { top: 4px; right: 4px; }
   }
+  @media (prefers-reduced-motion: reduce) { .more-room-actions { transition: none; } }
 </style>

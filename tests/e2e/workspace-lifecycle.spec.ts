@@ -1,8 +1,9 @@
 import { Buffer } from "node:buffer";
 import { readFile } from "node:fs/promises";
 import { expect, installEstablishedInstallation, test } from "./established-installation-fixture";
-import { generateSecretKey } from "nostr-tools";
+import { finalizeEvent, generateSecretKey } from "nostr-tools";
 import { bytesToHex } from "nostr-tools/utils";
+import { createInviteUrl } from "../../src/chat/invite";
 
 import { startMockRelay, type MockRelay } from "./mock-relay";
 
@@ -44,6 +45,44 @@ async function configureMockRelay(page: import("@playwright/test").Page): Promis
   await settings.getByRole("button", { name: "Add" }).click();
   await expect(settings.getByText(relay.url)).toBeVisible();
   await closeCoordinatorSettings(settings);
+}
+
+const INVITE_AVAILABILITY_RELAY = "wss://invite-availability.example";
+
+async function mockCoordinatorHeartbeat(
+  page: import("@playwright/test").Page,
+  getHeartbeat: () => ReturnType<typeof finalizeEvent> | undefined,
+): Promise<void> {
+  await page.routeWebSocket(INVITE_AVAILABILITY_RELAY, (socket) => {
+    socket.onMessage((message) => {
+      const request = JSON.parse(String(message));
+      if (!Array.isArray(request) || request[0] !== "REQ" || typeof request[1] !== "string") return;
+
+      const heartbeat = getHeartbeat();
+      if (heartbeat) socket.send(JSON.stringify(["EVENT", request[1], heartbeat]));
+      socket.send(JSON.stringify(["EOSE", request[1]]));
+    });
+  });
+}
+
+function createRunningCoordinatorHeartbeat(): ReturnType<typeof finalizeEvent> {
+  const secretKey = generateSecretKey();
+  const createdAt = Math.floor(Date.now() / 1_000);
+  try {
+    return finalizeEvent({
+      kind: 30382,
+      created_at: createdAt,
+      tags: [
+        ["d", "cordn-browser-instance"],
+        ["status", "running"],
+        ["instance", "invite-availability-test"],
+        ["expiration", String(createdAt + 20)],
+      ],
+      content: "cordn browser running",
+    }, secretKey);
+  } finally {
+    secretKey.fill(0);
+  }
 }
 
 async function openCoordinatorSettings(
@@ -430,6 +469,27 @@ async function createRoom(page: import("@playwright/test").Page, title: string):
   await expect(dialog).toBeHidden();
 }
 
+test("host room browser opens and navigates by tap", async ({ page }) => {
+  test.setTimeout(60_000);
+  await installEstablishedInstallation(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await configureMockRelay(page);
+  await startCoordinator(page);
+  await createRoom(page, "Mobile browser room");
+
+  const opener = page.getByRole("button", { name: "Open room browser" });
+  await opener.click();
+  const drawer = page.getByTestId("invite-panel");
+  await expect(drawer.getByRole("heading", { name: "Rooms" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Close room browser" })).toBeVisible();
+  await expect.poll(() => page.getByTestId("host-chat").evaluate((element) => (element as HTMLElement).inert)).toBe(true);
+
+  await drawer.getByRole("button", { name: /Open room Mobile browser room, hosted by/ }).click();
+  await expect(drawer).toHaveAttribute("aria-hidden", "true");
+  await expect(page.getByTestId("active-conversation-heading")).toBeFocused();
+});
+
 test("global and per-channel sound controls persist and expose non-default state", async ({ page }) => {
   await installEstablishedInstallation(page);
   await page.goto("/");
@@ -531,6 +591,15 @@ async function seedJoinedRoom(
   }, { title, coordinatorPubkey, relayUrl: relay.url, privateFixture });
 }
 
+async function revealOfflineCoordinatorCard(page: import("@playwright/test").Page, coordinatorPubkey: string) {
+  const card = page.getByTestId("invite-panel").locator(
+    `[data-testid="coordinator-card"][data-coordinator-pubkey="${coordinatorPubkey}"]`,
+  );
+  await expect(card).toHaveAttribute("tabindex", "0", { timeout: 10_000 });
+  await card.focus();
+  return card;
+}
+
 async function revealFullWorkspaceControls(page: import("@playwright/test").Page): Promise<void> {
   await seedJoinedRoom(page, "Workspace controls fixture", "9".repeat(64));
   await page.reload();
@@ -555,6 +624,7 @@ test("unread badge lifecycle projects exact room and coordinator counts", async 
   await page.reload();
 
   const rail = page.getByTestId("invite-panel");
+  await revealOfflineCoordinatorCard(page, coordinatorPubkey);
   await expect(rail.getByRole("button", { name: /Open room Unread one/ })).toBeVisible();
   const unreadBadge = rail.getByLabel("100 unread messages");
   await expect(unreadBadge).toHaveText("99+");
@@ -606,6 +676,7 @@ test("repairs replayed message ids before rendering cached production state", as
   });
   await page.reload();
 
+  await revealOfflineCoordinatorCard(page, "7".repeat(64));
   await page.getByRole("button", { name: /Open room Replay-safe room/ }).click();
   await expect(page.getByText("render once", { exact: true })).toHaveCount(1);
   expect(pageErrors.filter((message) => message.includes("each_key_duplicate"))).toEqual([]);
@@ -645,6 +716,7 @@ test("long room navigation stays operable and contained", async ({ page }) => {
     if (viewport.width <= 900) await page.getByRole("button", { name: "Open room browser" }).click();
     const rail = page.getByTestId("invite-panel");
     const remoteCard = rail.getByTestId("coordinator-card").filter({ hasText: "Coordinator dddddd" });
+    await remoteCard.hover();
     await expect(remoteCard.locator(".channel-row")).toHaveCount(5);
     await remoteCard.getByRole("button", { name: "Show 19 more" }).click();
     await expect(remoteCard.locator(".channel-row")).toHaveCount(24);
@@ -685,6 +757,7 @@ test("coordinator cards keep stable order and collapse dead groups into history"
   await expect(cards).toHaveCount(2);
   await expect(cards.first()).toContainText("My coordinator");
   const remote = cards.nth(1);
+  await remote.hover();
   await expect(remote.locator(".channel-row .truncate")).toHaveText(["Active first", "Active second"]);
   await expect(rail.getByRole("button", { name: "Create group" })).toHaveCount(1);
 
@@ -707,7 +780,9 @@ test("coordinator cards keep stable order and collapse dead groups into history"
     }
   });
   await page.reload();
-  await expect(page.getByTestId("coordinator-card").nth(1).locator(".channel-row .truncate")).toHaveText(["Active first", "Active second"]);
+  const reloadedRemote = page.getByTestId("coordinator-card").nth(1);
+  await reloadedRemote.hover();
+  await expect(reloadedRemote.locator(".channel-row .truncate")).toHaveText(["Active first", "Active second"]);
 
   await page.evaluate(() => {
     for (let index = 0; index < localStorage.length; index += 1) {
@@ -721,6 +796,384 @@ test("coordinator cards keep stable order and collapse dead groups into history"
   await page.reload();
   await expect(page.getByTestId("invite-panel")).toBeVisible();
   await expect(page.getByTestId("sidebar-history").getByRole("button", { name: /History 4/ })).toBeVisible();
+});
+
+test("offline chat disclosure is touch-operated while retaining pointer and keyboard discovery", async ({ page }) => {
+  const singularCoordinator = "e".repeat(64);
+  const pluralCoordinator = "f".repeat(64);
+  await page.goto("/");
+  await seedJoinedRoom(page, "Solo archive", singularCoordinator);
+  await seedJoinedRoom(page, "Archive one", pluralCoordinator);
+  await seedJoinedRoom(page, "Archive two", pluralCoordinator);
+  await page.reload();
+
+  const rail = page.getByTestId("invite-panel");
+  const singularCard = rail.locator(`[data-testid="coordinator-card"][data-coordinator-pubkey="${singularCoordinator}"]`);
+  const pluralCard = rail.locator(`[data-testid="coordinator-card"][data-coordinator-pubkey="${pluralCoordinator}"]`);
+
+  const singularDisclosure = singularCard.getByRole("button", { name: "Show 1 offline chat" });
+  const pluralDisclosure = pluralCard.getByRole("button", { name: "Show 2 offline chats" });
+  await expect(singularDisclosure).toBeVisible();
+  await expect(pluralDisclosure).toBeVisible();
+  await expect(singularCard.locator(".channel-row")).toHaveCount(0);
+  await expect(pluralCard.locator(".channel-row")).toHaveCount(0);
+  await expect.poll(() => singularDisclosure.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    return bounds.width >= 44 && bounds.height >= 44;
+  })).toBe(true);
+
+  await singularDisclosure.click();
+  const hideDisclosure = singularCard.getByRole("button", { name: "Hide offline chats" });
+  await expect(hideDisclosure).toHaveAttribute("aria-expanded", "true");
+  const soloRoom = singularCard.getByRole("button", { name: /Open room Solo archive, hosted by/ });
+  await expect(soloRoom).toBeVisible();
+  await hideDisclosure.click();
+  await expect(singularCard.locator(".channel-row")).toHaveCount(0);
+
+  await page.mouse.move(1270, 700);
+  await singularCard.hover();
+  await expect(soloRoom).toBeVisible();
+  await soloRoom.hover();
+  await expect(soloRoom).toBeVisible();
+});
+
+test("offline coordinator disclosure survives reachability transitions while focused", async ({ page }) => {
+  const coordinatorPubkey = "9".repeat(64);
+  await page.goto("/");
+  await seedJoinedRoom(page, "Transition archive", coordinatorPubkey);
+  await page.reload();
+
+  const card = page.getByTestId("invite-panel").locator(`[data-testid="coordinator-card"][data-coordinator-pubkey="${coordinatorPubkey}"]`);
+  await expect(card.getByRole("button", { name: "Show 1 offline chat" })).toBeVisible({ timeout: 20_000 });
+  await card.focus();
+  const room = card.getByRole("button", { name: /Open room Transition archive, hosted by/ });
+  await expect(room).toBeVisible();
+
+  await page.evaluate((pubkey) => window.dispatchEvent(new CustomEvent("cordn:server-online", {
+    detail: { coordinatorPubkey: pubkey },
+  })), coordinatorPubkey);
+  await expect(page.getByTestId(`coordinator-card-status-${coordinatorPubkey}`)).toHaveAttribute("data-state", "online", { timeout: 10_000 });
+
+  await page.evaluate((pubkey) => window.dispatchEvent(new CustomEvent("cordn:server-offline", {
+    detail: { coordinatorPubkey: pubkey },
+  })), coordinatorPubkey);
+  await expect(page.getByTestId(`coordinator-card-status-${coordinatorPubkey}`)).toHaveAttribute("data-state", "offline", { timeout: 10_000 });
+  await expect(card).toBeFocused();
+  await expect(room).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(card.getByRole("button", { name: "Show 1 offline chat" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(room).toBeFocused();
+});
+
+test("offline coordinator disclosure preserves motion and five-room behavior", async ({ page }) => {
+  const coordinator = "a".repeat(64);
+  await page.goto("/");
+  for (let index = 0; index < 7; index += 1) {
+    await seedJoinedRoom(page, `Offline room ${index}`, coordinator);
+  }
+  await page.reload();
+
+  const card = page.getByTestId("invite-panel").locator(`[data-testid="coordinator-card"][data-coordinator-pubkey="${coordinator}"]`);
+  await expect(card.getByRole("button", { name: "Show 7 offline chats" })).toBeVisible();
+  await expect(card.locator(".channel-row")).toHaveCount(0);
+
+  await card.hover();
+  const disclosure = card.locator(".offline-room-disclosure");
+  await expect(card.locator(".channel-row")).toHaveCount(5);
+  await expect(card.getByRole("button", { name: "Show 2 more" })).toBeVisible();
+  await expect(disclosure).toHaveCSS("animation-duration", "0.15s");
+  expect(await disclosure.evaluate((element) => getComputedStyle(element).animationName)).toContain("offline-rooms-enter");
+  await card.getByRole("button", { name: "Show 2 more" }).click();
+  await expect(card.locator(".channel-row")).toHaveCount(7);
+  await expect(card.getByRole("button", { name: "Show fewer chats" })).toBeVisible();
+  await expectNoDocumentOverflow(page, { width: 1280, height: 720 });
+
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.mouse.move(0, 0);
+  await expect.poll(async () => {
+    if (await disclosure.count() === 0) return "removed";
+    return disclosure.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return element.hasAttribute("inert")
+        && element.getAttribute("aria-hidden") === "true"
+        && style.pointerEvents === "none"
+        && style.animationName.includes("offline-rooms-exit")
+        ? "exiting"
+        : "waiting";
+    });
+  }).toMatch(/^(exiting|removed)$/);
+  await expect(card.locator(".channel-row")).toHaveCount(0);
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.mouse.move(1270, 700);
+  await card.hover();
+  await expect(disclosure).toHaveCSS("animation-name", "none");
+  await expect(disclosure).toHaveCSS("transform", "none");
+  await page.mouse.move(1270, 700);
+  expect(await card.locator(".channel-row").count()).toBe(0);
+  await card.hover();
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expectNoDocumentOverflow(page, { width: 320, height: 720 });
+});
+
+test("favorite menu duplicates the exact room and survives reload", async ({ page }) => {
+  const favoriteCoordinator = "e".repeat(64);
+  const otherCoordinator = "f".repeat(64);
+  await page.goto("/");
+  await seedJoinedRoom(page, "Favorite exact", favoriteCoordinator);
+  await seedJoinedRoom(page, "Favorite exact", otherCoordinator);
+  await page.reload();
+
+  const rail = page.getByTestId("invite-panel");
+  const sourceCard = rail.locator(`[data-testid="coordinator-card"][data-coordinator-pubkey="${favoriteCoordinator}"]`);
+  const sameIdOtherCoordinator = rail.locator(`[data-testid="coordinator-card"][data-coordinator-pubkey="${otherCoordinator}"]`);
+  const sourceRow = sourceCard.locator(".channel-row");
+  await sourceCard.hover();
+  await expect(sourceRow).toHaveCount(1);
+  await sameIdOtherCoordinator.hover();
+  await expect(sameIdOtherCoordinator.locator(".channel-row")).toHaveCount(1);
+
+  await sourceCard.hover();
+  await sourceRow.getByRole("button", { name: "More actions for # Favorite exact" }).click();
+  const sourceMenu = page.getByRole("menu", { name: "Room actions for Favorite exact" });
+  await sourceMenu.getByRole("menuitem", { name: "Add to favorites" }).click();
+
+  const favorites = rail.getByRole("group", { name: "Favorites" });
+  await expect(favorites).toBeVisible();
+  await expect(favorites.locator(".channel-row")).toHaveCount(1);
+  await sourceCard.hover();
+  await expect(sourceRow).toHaveCount(1);
+  await sameIdOtherCoordinator.hover();
+  await expect(sameIdOtherCoordinator.locator(".channel-row")).toHaveCount(1);
+  expect(await favorites.locator("[data-room-key]").evaluateAll((rows, expectedKey) => (
+    rows.filter((row) => row.getAttribute("data-room-key") === expectedKey).length
+  ), `${favoriteCoordinator}\0favorite-exact`)).toBe(1);
+  expect(await favorites.locator("[data-room-key]").evaluateAll((rows, otherKey) => (
+    rows.filter((row) => row.getAttribute("data-room-key") === otherKey).length
+  ), `${otherCoordinator}\0favorite-exact`)).toBe(0);
+
+  await page.reload();
+  const reloadedFavorites = page.getByTestId("invite-panel").getByRole("group", { name: "Favorites" });
+  await expect(reloadedFavorites).toHaveCount(1);
+  await reloadedFavorites.getByRole("button", { name: "More actions for # Favorite exact" }).click();
+  await page.getByRole("menu", { name: "Room actions for Favorite exact" }).getByRole("menuitem", { name: "Remove from favorites" }).click();
+
+  await expect(reloadedFavorites).toHaveCount(0);
+  const restoredSource = page.getByTestId("invite-panel").locator(`[data-testid="coordinator-card"][data-coordinator-pubkey="${favoriteCoordinator}"]`);
+  await expect(restoredSource.getByRole("button", { name: /Open room Favorite exact, hosted by/ })).toBeFocused();
+  await expect(restoredSource.locator(".channel-row")).toHaveCount(1);
+});
+
+test("favorite star mirrors duplicate state and keeps sidebar controls touch-safe", async ({ page }) => {
+  const coordinator = "c".repeat(64);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await seedJoinedRoom(page, "Star favorite", coordinator);
+  await page.reload();
+
+  const rail = page.getByTestId("invite-panel");
+  const sourceCard = rail.locator(`[data-testid="coordinator-card"][data-coordinator-pubkey="${coordinator}"]`);
+  await sourceCard.hover();
+  const sourceRow = sourceCard.locator(".channel-row");
+  const star = sourceRow.getByRole("button", { name: "Favorite # Star favorite" });
+  const menuTrigger = sourceRow.getByRole("button", { name: "More actions for # Star favorite" });
+  await expect(star).toHaveAttribute("aria-pressed", "false");
+  await expect(star).toHaveCSS("transition-duration", "0s");
+  await expect(menuTrigger).toHaveCSS("transition-duration", "0s");
+  const bounds = await Promise.all([sourceRow.boundingBox(), star.boundingBox()]);
+  expect(bounds[0]?.height).toBeGreaterThanOrEqual(44);
+  expect(bounds[1]?.width).toBeGreaterThanOrEqual(44);
+  expect(bounds[1]?.height).toBeGreaterThanOrEqual(44);
+
+  await star.focus();
+  await expect(star).toHaveCSS("opacity", "1");
+  await star.click();
+  await expect(star).toHaveAttribute("aria-label", "Unfavorite # Star favorite");
+  await expect(star).toHaveAttribute("aria-pressed", "true");
+  const favoriteStar = rail.getByRole("group", { name: "Favorites" }).getByRole("button", { name: "Unfavorite # Star favorite" });
+  await expect(favoriteStar).toHaveAttribute("aria-pressed", "true");
+  const favoriteBounds = await favoriteStar.boundingBox();
+  expect(favoriteBounds?.width).toBeGreaterThanOrEqual(44);
+  expect(favoriteBounds?.height).toBeGreaterThanOrEqual(44);
+  await favoriteStar.click();
+  await expect(rail.getByRole("group", { name: "Favorites" })).toHaveCount(0);
+  await expect(sourceRow).toHaveCount(1);
+
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expectNoDocumentOverflow(page, { width: 320, height: 720 });
+});
+
+test("unfavoriting a collapsed source keeps its row visible and restores focus", async ({ page }) => {
+  const coordinator = "c".repeat(64);
+  await page.goto("/");
+  for (let index = 0; index < 7; index += 1) {
+    await seedJoinedRoom(page, `Reveal room ${index}`, coordinator);
+  }
+  await page.reload();
+
+  const rail = page.getByTestId("invite-panel");
+  const sourceCard = rail.locator(`[data-testid="coordinator-card"][data-coordinator-pubkey="${coordinator}"]`);
+  await sourceCard.hover();
+  await expect(sourceCard.locator(".channel-row")).toHaveCount(5);
+  await sourceCard.getByRole("button", { name: "Show 2 more" }).click();
+  const sixthRoomActions = sourceCard.getByRole("button", { name: "More actions for # Reveal room 5" });
+  await sixthRoomActions.click();
+  await page.getByRole("menu", { name: "Room actions for Reveal room 5" }).getByRole("menuitem", { name: "Add to favorites" }).click();
+  const seventhRoomActions = sourceCard.getByRole("button", { name: "More actions for # Reveal room 6" });
+  await seventhRoomActions.click();
+  await page.getByRole("menu", { name: "Room actions for Reveal room 6" }).getByRole("menuitem", { name: "Add to favorites" }).click();
+  await expect(rail.getByRole("group", { name: "Favorites" })).toContainText("Reveal room 5");
+
+  await sourceCard.getByRole("button", { name: "Show fewer chats" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(sourceCard.locator(".channel-row")).toHaveCount(5);
+  const favorite = rail.getByRole("group", { name: "Favorites" });
+  await favorite.getByRole("button", { name: "More actions for # Reveal room 5" }).click();
+  await page.getByRole("menu", { name: "Room actions for Reveal room 5" }).getByRole("menuitem", { name: "Remove from favorites" }).click();
+
+  await expect(favorite).not.toContainText("Reveal room 5");
+  const restoredSource = sourceCard.getByRole("button", { name: /Open room Reveal room 5, hosted by/ });
+  await expect(restoredSource).toBeVisible();
+  await expect(restoredSource).toBeFocused();
+
+  await sourceCard.getByRole("button", { name: "Show fewer chats" }).focus();
+  await page.keyboard.press("Enter");
+  await favorite.getByRole("button", { name: /Open room Reveal room 6, hosted by/ }).click();
+  await sourceCard.hover();
+  const laterActiveSource = sourceCard.locator(".channel-row.active").getByRole("button", { name: /Open room Reveal room 6, hosted by/ });
+  await expect(laterActiveSource).toBeVisible();
+});
+
+test("shared invite follows exact coordinator availability", async ({ page }) => {
+  const viewer = "b".repeat(64);
+  const heartbeat = { current: undefined as ReturnType<typeof finalizeEvent> | undefined };
+  const futureHeartbeat = createRunningCoordinatorHeartbeat();
+  const inviteCoordinator = futureHeartbeat.pubkey;
+  const invite = createInviteUrl("https://invite.example", {
+    groupId: "availability-invite",
+    coordinatorPubkey: inviteCoordinator,
+    relayUrls: [INVITE_AVAILABILITY_RELAY],
+    title: "Availability room",
+  });
+  await mockCoordinatorHeartbeat(page, () => heartbeat.current);
+  await page.goto("/");
+  await configureMockRelay(page);
+  await page.evaluate(({ viewerPubkey, content }) => {
+    const coordinatorPubkey = "c".repeat(64);
+    const roomId = "availability-renderer";
+    localStorage.setItem(`cordn-adhoc-chat-room:v2:${encodeURIComponent(coordinatorPubkey)}:${encodeURIComponent(roomId)}`, JSON.stringify({
+      version: 1, id: roomId, title: "Availability renderer", coordinatorPubkey, coordinatorOrigin: window.location.origin,
+      relayUrls: ["ws://127.0.0.1:1"], name: "Guest", stablePubkey: viewerPubkey, isHost: false, stateBase64: "",
+      keyPackage: { reference: "availability", publicBase64: "public", privateBase64: "private" }, lastCursor: 0,
+      messages: [{ type: "message", id: "availability-message", sender: "d".repeat(64), name: "Host", content, createdAt: 1 }], pending: [],
+      coordinatorKeyMode: "ephemeral", createdAt: Date.now(), updatedAt: Date.now(),
+    }));
+  }, { viewerPubkey: viewer, content: invite });
+  await page.reload();
+  await revealOfflineCoordinatorCard(page, "c".repeat(64));
+  const room = page.getByRole("button", { name: /^Open room Availability renderer/ });
+  if (!(await room.isVisible())) await page.getByRole("button", { name: "Open room browser" }).click();
+  await room.click();
+
+  const action = page.getByRole("button", { name: /Join Availability room/ });
+  await expect(action).toBeDisabled({ timeout: 20_000 });
+  await expect(action).toHaveAttribute("title", "Coordinator is offline");
+  await expect(action).toHaveAttribute("aria-describedby", /^guest-[a-z0-9]+-invite-availability-\d+$/);
+  await expect(action).toHaveCSS("cursor", "not-allowed");
+  await expect(page.locator(`#${await action.getAttribute("aria-describedby")}`)).toHaveText("Coordinator is offline");
+  const offlineBounds = await action.boundingBox();
+
+  heartbeat.current = futureHeartbeat;
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(action).toBeEnabled({ timeout: 10_000 });
+  expect(await action.boundingBox()).toEqual(offlineBounds);
+  await action.click();
+  await expect.poll(() => page.evaluate(() => {
+    const intent = (history.state as Record<string, unknown> | null)?.cahmlsWorkspaceIntent;
+    return typeof intent === "string" ? new URL(intent).searchParams.get("autojoin") : null;
+  })).toBe("1");
+});
+
+test("host messages re-probe invite-only coordinators when availability changes", async ({ page }) => {
+  test.setTimeout(45_000);
+  const heartbeat = { current: undefined as ReturnType<typeof finalizeEvent> | undefined };
+  const futureHeartbeat = createRunningCoordinatorHeartbeat();
+  const inviteCoordinator = futureHeartbeat.pubkey;
+  const sharedInvite = createInviteUrl("https://invite.example", {
+    groupId: "host-availability-invite",
+    coordinatorPubkey: inviteCoordinator,
+    relayUrls: [INVITE_AVAILABILITY_RELAY],
+    title: "Host availability room",
+  });
+
+  await mockCoordinatorHeartbeat(page, () => heartbeat.current);
+  await page.goto("/");
+  await configureMockRelay(page);
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await expectGuidedCoordinatorOnline(page);
+  await createRoom(page, "Invite probe host");
+  await page.getByPlaceholder("Message as host").fill(sharedInvite);
+  await page.getByPlaceholder("Message as host").press("Enter");
+
+  const action = page.getByRole("button", { name: /Join Host availability room/ });
+  await expect(action).toBeDisabled({ timeout: 20_000 });
+  heartbeat.current = futureHeartbeat;
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(action).toBeEnabled({ timeout: 10_000 });
+  await action.click();
+  await expect.poll(() => page.evaluate(() => {
+    const intent = (history.state as Record<string, unknown> | null)?.cahmlsWorkspaceIntent;
+    return typeof intent === "string" ? new URL(intent).searchParams.get("autojoin") : null;
+  })).toBe("1");
+});
+
+test("shared invite availability descriptions are unique across sender streaks", async ({ page }) => {
+  const viewer = "b".repeat(64);
+  const firstInvite = createInviteUrl("https://invite.example", {
+    groupId: "first-description-invite",
+    coordinatorPubkey: "a".repeat(64),
+    relayUrls: ["wss://relay.example"],
+    title: "First description room",
+  });
+  const secondInvite = createInviteUrl("https://invite.example", {
+    groupId: "second-description-invite",
+    coordinatorPubkey: "e".repeat(64),
+    relayUrls: ["wss://relay.example"],
+    title: "Second description room",
+  });
+
+  await page.goto("/");
+  await page.evaluate(({ viewerPubkey, messages }) => {
+    const coordinatorPubkey = "c".repeat(64);
+    const roomId = "availability-description-renderer";
+    localStorage.setItem(`cordn-adhoc-chat-room:v2:${encodeURIComponent(coordinatorPubkey)}:${encodeURIComponent(roomId)}`, JSON.stringify({
+      version: 1, id: roomId, title: "Availability description renderer", coordinatorPubkey, coordinatorOrigin: window.location.origin,
+      relayUrls: ["ws://127.0.0.1:1"], name: "Guest", stablePubkey: viewerPubkey, isHost: false, stateBase64: "",
+      keyPackage: { reference: "availability-description", publicBase64: "public", privateBase64: "private" }, lastCursor: 0,
+      messages, pending: [], coordinatorKeyMode: "ephemeral", createdAt: Date.now(), updatedAt: Date.now(),
+    }));
+  }, {
+    viewerPubkey: viewer,
+    messages: [
+      { type: "message", id: "first-description-message", sender: "d".repeat(64), name: "First host", content: firstInvite, createdAt: 1 },
+      { type: "message", id: "second-description-message", sender: "f".repeat(64), name: "Second host", content: secondInvite, createdAt: 2 },
+    ],
+  });
+  await page.reload();
+  await revealOfflineCoordinatorCard(page, "c".repeat(64));
+  const room = page.getByRole("button", { name: /^Open room Availability description renderer/ });
+  if (!(await room.isVisible())) await page.getByRole("button", { name: "Open room browser" }).click();
+  await room.click();
+
+  const actions = page.getByRole("button", { name: /Join .* description room/ });
+  await expect(actions).toHaveCount(2);
+  const descriptionIds = await actions.evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-describedby")));
+  expect(descriptionIds.every((id): id is string => Boolean(id))).toBe(true);
+  expect(new Set(descriptionIds).size).toBe(descriptionIds.length);
+  for (const descriptionId of descriptionIds) {
+    await expect(page.locator(`#${descriptionId}`)).toHaveText("Coordinator is offline");
+  }
 });
 
 test("generates copyable identity on first load", async ({ page }) => {
@@ -772,6 +1225,7 @@ test("running coordinator with no local rooms keeps setup quiet while preserving
 
   await savedChats.click();
   await expect(page.getByTestId("invite-panel")).toBeVisible();
+  await revealOfflineCoordinatorCard(page, "e".repeat(64));
   await expect(page.locator(".channel-row").filter({ hasText: "Saved elsewhere" })).toBeVisible();
 });
 
@@ -990,6 +1444,7 @@ test("browses joined chats from the root shell without starting an unprotected l
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByTestId("operator-shell")).toBeVisible();
   await expect(page.getByTestId("workspace-navigation")).toHaveCount(1);
+  await revealOfflineCoordinatorCard(page, "a".repeat(64));
   await expect(page.getByRole("button", { name: /Open room Elsewhere lounge/ })).toBeVisible();
 });
 
@@ -1004,6 +1459,7 @@ test("browses cached chats while a persisted coordinator stays locked", async ({
   await page.getByRole("button", { name: "Open chats" }).click();
   await expect(page.getByTestId("operator-shell")).toBeVisible();
   await expect(page.getByTestId("workspace-navigation")).toHaveCount(1);
+  await revealOfflineCoordinatorCard(page, "c".repeat(64));
   await page.getByRole("button", { name: /Open room Locked-out lounge/ }).click();
   await expect(page.getByTestId("cached-room-view")).toContainText("Locked-out lounge");
   await expect(page.locator(".presence-control")).toHaveCount(0);
@@ -1654,6 +2110,70 @@ test("uses the full viewport for the live host workspace on desktop and mobile",
   }
 });
 
+test("visual viewport keeps focused composer reachable", async ({ page }) => {
+  const viewport = { width: 390, height: 430 };
+  await page.setViewportSize(viewport);
+  await page.goto("/");
+  await configureMockRelay(page);
+  await startCoordinator(page);
+  await expectGuidedCoordinatorOnline(page);
+  await createRoom(page, "Visual viewport room");
+
+  const composer = page.getByTestId("host-chat-composer");
+  const input = composer.getByPlaceholder("Message as host");
+  const log = page.getByTestId("host-message-list");
+  const previousScroll = await log.evaluate((element) => element.scrollTop);
+  await input.focus();
+
+  await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue("--app-visual-height"))).toBe("430px");
+  await expect.poll(() => composer.evaluate((element) => {
+    const container = element.closest<HTMLElement>(".operator-field")?.getBoundingClientRect();
+    const input = element.querySelector<HTMLInputElement>("input");
+    const send = [...element.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Send");
+    if (!container || !input || !send) return false;
+    const inputBounds = input.getBoundingClientRect();
+    const sendBounds = send.getBoundingClientRect();
+    return inputBounds.top >= container.top
+      && inputBounds.bottom <= container.bottom
+      && sendBounds.top >= container.top
+      && sendBounds.bottom <= container.bottom
+      && sendBounds.width >= 44
+      && sendBounds.height >= 44;
+  })).toBe(true);
+  await expect(log).toHaveJSProperty("scrollTop", previousScroll);
+  await expectNoDocumentOverflow(page, viewport);
+});
+
+test("touch target inventory and mobile action sheet remain contained", async ({ page }) => {
+  const viewport = { width: 390, height: 520 };
+  await page.setViewportSize(viewport);
+  await page.goto("/");
+  await configureMockRelay(page);
+  await startCoordinator(page);
+  await expectGuidedCoordinatorOnline(page);
+  await createRoom(page, "Touch target room");
+
+  const inventory = [
+    page.getByRole("button", { name: "Open room browser" }),
+    page.getByTestId("host-chat-composer").getByRole("button", { name: "Send" }),
+    page.getByTestId("host-chat").getByRole("button", { name: "More room actions" }),
+    page.getByTestId("host-chat-composer").getByLabel("Add 👍"),
+  ];
+  for (const control of inventory) {
+    await expect.poll(() => control.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return bounds.width >= 44 && bounds.height >= 44;
+    })).toBe(true);
+  }
+
+  const actions = page.getByTestId("host-chat").getByRole("button", { name: "More room actions" });
+  await actions.click();
+  const sheet = page.getByRole("menu", { name: "Room actions for Touch target room" });
+  await expect(sheet).toHaveAttribute("data-overlay-side", "sheet");
+  await expectInsideViewport(sheet);
+  await expectNoDocumentOverflow(page, viewport);
+});
+
 test("keeps host mobile tools and room dialogs bounded inside the app shell", async ({ page }) => {
   const portrait = { width: 320, height: 568 };
   await page.setViewportSize(portrait);
@@ -1677,6 +2197,11 @@ test("keeps host mobile tools and room dialogs bounded inside the app shell", as
   await expect(profile).toBeHidden();
   await expectNoDocumentOverflow(page, portrait);
 
+  // The profile sheet was opened from inside the drawer, so closing it must
+  // deterministically restore that drawer rather than stranding focus.
+  const reopenedBrowser = page.locator(".mobile-rail-toggle[aria-expanded='true']");
+  await expect(reopenedBrowser).toBeVisible();
+  await reopenedBrowser.click();
   await page.getByRole("button", { name: "Open room browser" }).click();
   await page.getByRole("button", { name: "Invite", exact: true }).click();
   const invite = page.getByTestId("invite-dialog").getByRole("dialog");
@@ -2001,7 +2526,7 @@ test("message reactions persist and synchronize", async ({ page, browser }) => {
   await addReaction.click();
   const reactionMenu = guestMessage.getByRole("menu", { name: /Choose reaction/ });
   await expect(reactionMenu).toBeVisible();
-  await expect(reactionMenu).toHaveCSS("position", "absolute");
+  await expect(reactionMenu).toHaveCSS("position", "fixed");
   await reactionMenu.getByRole("menuitem", { name: "React 👍" }).click();
   await expect(guestMessage.getByRole("button", { name: /Remove 👍 reaction, 1 participant/ })).toHaveAttribute("aria-pressed", "true");
   await expect(hostMessage.getByLabel("👍 reaction, 1 participant")).toBeVisible({ timeout: 20_000 });
@@ -2056,6 +2581,7 @@ test("emoji shortcuts and offline cached reactions", async ({ page }) => {
     localStorage.setItem(key, JSON.stringify(room));
   });
   await page.reload();
+  await revealOfflineCoordinatorCard(page, "a".repeat(64));
   await page.getByRole("button", { name: /Open room Offline reactions/ }).click();
   const cachedRoom = page.getByTestId("cached-room-view");
   await expect(cachedRoom.getByText("Still readable")).toBeVisible();
@@ -2225,6 +2751,7 @@ test("same-id sidebar removal leaves only the captured remote record", async ({ 
   await page.goto("/");
   await seedJoinedRoom(page, "Sidebar remote", "f".repeat(64));
   await page.reload();
+  await revealOfflineCoordinatorCard(page, "f".repeat(64));
   const targetRow = page.locator(".channel-row").filter({ hasText: "Sidebar remote" });
   const trigger = targetRow.getByRole("button", { name: "More actions for # Sidebar remote" });
   await trigger.click();
@@ -2248,6 +2775,7 @@ test("leaving the last remote room returns to the home coordinator", async ({ pa
   expect(homeCoordinatorPubkey).toBeTruthy();
   await expect(page.getByTestId(`coordinator-card-status-${remoteCoordinatorPubkey}`)).toBeVisible();
 
+  await revealOfflineCoordinatorCard(page, remoteCoordinatorPubkey);
   const targetRow = page.locator(".channel-row").filter({ hasText: "Last remote room" });
   await targetRow.getByRole("button", { name: "More actions for # Last remote room" }).click();
   await page.getByRole("menu", { name: "Room actions for Last remote room" })
@@ -2347,6 +2875,7 @@ test("switches local Delete to remote Leave without crossing same-id room identi
   await expect(collisionActions.getByRole("menuitem", { name: "Delete room Local collision room" })).toBeVisible();
   await expect(collisionActions.getByRole("menuitem", { name: "Leave room Local collision room" })).toHaveCount(0);
   await page.keyboard.press("Escape");
+  await revealOfflineCoordinatorCard(page, remoteCoordinatorPubkey);
   await page.getByRole("button", { name: /Open room Remote collision room/ }).click();
 
   collisionActions = await openRoomActions(page, "Remote collision room");

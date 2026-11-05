@@ -1,9 +1,12 @@
 import { configStore, type BrowserCoordinatorOptions } from "../config/config.svelte";
 import { SvelteSet } from "svelte/reactivity";
 import {
+  CoordinatorStorageFailure,
   clearPersistedCoordinatorState,
   createBrowserCoordinatorStorage,
-} from "../cordn/coordinator/storage/browserSqliteStorage";
+  removePersistedCoordinatorSnapshot,
+  type CoordinatorStorageFailureKind,
+} from "../cordn/coordinator/storage/indexedDbSnapshotStorage";
 import { KeyManager } from "../crypto/key-manager";
 import {
   keyStorage,
@@ -85,6 +88,7 @@ export interface CoordinatorStoreRuntime {
 }
 
 export type CoordinatorProfilePublicationState = "idle" | "publishing" | "published" | "failed";
+export type SnapshotPersistenceState = "checking" | "durable" | "temporary" | "attention" | "flushing" | "flush-failed";
 
 export interface CoordinatorProfilePublicationResult {
   localSaved: boolean;
@@ -235,6 +239,9 @@ export class CoordinatorStore {
   passphraseError = $state<string | null>(null);
   persistenceError = $state<string | null>(null);
   persistenceEnabled = $state(false);
+  snapshotPersistence = $state<SnapshotPersistenceState>("temporary");
+  snapshotFailureKind = $state<CoordinatorStorageFailureKind | null>(null);
+  private snapshotTemporarySession = $state(false);
   relayStatuses = $state<Record<string, RelayConnectionStatus>>({});
   debugLog = $state<DebugLogEntry[]>([]);
   profilePublicationState = $state<CoordinatorProfilePublicationState>("idle");
@@ -249,6 +256,7 @@ export class CoordinatorStore {
   private startupGeneration = 0;
   private startupController: AbortController | null = null;
   private startupPromise: Promise<void> | null = null;
+  private stopPromise: Promise<void> | null = null;
   private profilePublicationPromise: Promise<CoordinatorProfilePublicationResult> | null = null;
   private readonly runtime: CoordinatorStoreRuntime;
 
@@ -457,6 +465,7 @@ export class CoordinatorStore {
     this.recoveryTargets = [];
     this.recoveryCompleted.clear();
     this.status = transitionCoordinator(this.status, "start");
+    this.snapshotPersistence = this.persistenceEnabled && !this.snapshotTemporarySession ? "checking" : "temporary";
     this.setStartupProgress("checking-instance");
     configStore.lock();
     this.error = null;
@@ -482,11 +491,11 @@ export class CoordinatorStore {
         keyManager.getSecretKeyBytes(),
         configStore.enabledRelayUrls,
         configStore.coordinatorOptions,
-        this.persistenceEnabled,
+        this.persistenceEnabled && !this.snapshotTemporarySession,
         {
           onStartupPhase: ({ phase }) => {
             const detail = phase === "opening-storage"
-              ? this.persistenceEnabled
+              ? this.persistenceEnabled && !this.snapshotTemporarySession
                 ? "Loading encrypted room state from this device."
                 : "Preparing temporary room state for this session."
               : phase === "connecting-relays"
@@ -542,6 +551,7 @@ export class CoordinatorStore {
         return;
       }
       this.running = running;
+      this.snapshotPersistence = this.persistenceEnabled && !this.snapshotTemporarySession ? "durable" : "temporary";
       this.setEnabledRelayStatuses("connected");
       const recovered = await this.recoverHostedRooms(generation, signal);
       if (!recovered || !this.ownsGeneration(generation, signal)) return;
@@ -554,7 +564,13 @@ export class CoordinatorStore {
       this.running = null;
       await this.releaseInstanceLease();
       this.runtime.stopResourceMonitor();
-      this.error = error instanceof Error ? error.message : "Coordinator startup failed";
+      if (error instanceof CoordinatorStorageFailure) {
+        this.snapshotPersistence = "attention";
+        this.snapshotFailureKind = error.kind;
+        this.error = "Storage needs attention";
+      } else {
+        this.error = error instanceof Error ? error.message : "Coordinator startup failed";
+      }
       this.setStartupProgress("failed", this.error);
       if (this.error === INSTANCE_RUNNING_MESSAGE) {
         this.addDebugLog("warn", INSTANCE_RUNNING_MESSAGE);
@@ -567,6 +583,53 @@ export class CoordinatorStore {
   }
 
   async stop(): Promise<void> {
+    if (this.stopPromise) return this.stopPromise;
+    const transaction = this.stopCurrentGeneration(false).finally(() => {
+      if (this.stopPromise === transaction) this.stopPromise = null;
+    });
+    this.stopPromise = transaction;
+    return transaction;
+  }
+
+  async stopWithoutSaving(): Promise<void> {
+    if (this.stopPromise) return this.stopPromise;
+    const transaction = this.stopCurrentGeneration(true).finally(() => {
+      if (this.stopPromise === transaction) this.stopPromise = null;
+    });
+    this.stopPromise = transaction;
+    return transaction;
+  }
+
+  async retrySnapshotFlush(): Promise<void> {
+    if (!this.running) return;
+    this.snapshotPersistence = "flushing";
+    try {
+      await this.running.flush?.();
+      this.snapshotPersistence = this.persistenceEnabled && !this.snapshotTemporarySession ? "durable" : "temporary";
+    } catch {
+      this.snapshotPersistence = "flush-failed";
+    }
+  }
+
+  async retryStorage(): Promise<void> {
+    if (this.snapshotPersistence !== "attention") return;
+    await this.start();
+  }
+
+  async removeCorruptSnapshot(): Promise<void> {
+    if (this.snapshotFailureKind !== "corrupt") return;
+    await removePersistedCoordinatorSnapshot(this.identity.publicKeyHex);
+    this.snapshotFailureKind = null;
+    await this.retryStorage();
+  }
+
+  async continueTemporarily(): Promise<void> {
+    if (this.snapshotPersistence !== "attention") return;
+    this.snapshotTemporarySession = true;
+    await this.start();
+  }
+
+  private async stopCurrentGeneration(abandonPersistence: boolean): Promise<void> {
     this.addDebugLog("info", "coordinator stop requested");
     this.startupGeneration += 1;
     this.startupController?.abort();
@@ -574,12 +637,27 @@ export class CoordinatorStore {
     const activeStartup = this.startupPromise;
     if (activeStartup) await activeStartup;
     if (this.startupPromise === activeStartup) this.startupPromise = null;
+    if (this.running && !abandonPersistence) {
+      this.snapshotPersistence = "flushing";
+      try {
+        await this.running.flush?.();
+      } catch {
+        // Never replace a usable running transport with a false successful
+        // stop. The recovery UI owns retry, keep-running, or explicit abandon.
+        this.snapshotPersistence = "flush-failed";
+        this.addDebugLog("warn", "coordinator snapshot flush failed");
+        return;
+      }
+    }
     this.status = transitionCoordinator(this.status, "stop");
     await this.stopSync();
     this.recoveryTargets = [];
     this.recoveryCompleted.clear();
     this.relayStatuses = {};
     this.status = transitionCoordinator(this.status, "stopped");
+    this.snapshotPersistence = abandonPersistence
+      ? "temporary"
+      : this.persistenceEnabled && !this.snapshotTemporarySession ? "durable" : "temporary";
     this.setStartupProgress("idle");
     this.addDebugLog("info", "coordinator stopped");
   }
@@ -588,6 +666,7 @@ export class CoordinatorStore {
     if (this.status !== "running" && this.status !== "starting") return;
     this.addDebugLog("info", "coordinator restart requested", "applying updated settings");
     await this.stop();
+    if (!this.isStopped()) return;
     await this.start();
   }
 
@@ -633,6 +712,10 @@ export class CoordinatorStore {
     if (this.running) this.runtime.closeTransport(this.running);
     this.running = null;
     await this.releaseInstanceLease();
+  }
+
+  private isStopped(): boolean {
+    return this.status === "idle";
   }
 
   private async recoverHostedRooms(generation: number, signal: AbortSignal): Promise<boolean> {

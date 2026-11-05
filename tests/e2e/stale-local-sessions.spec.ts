@@ -251,6 +251,9 @@ test("keeps a stale remote room readable without granting a mismatched signer se
   await expect(page.getByTestId("chat-lobby")).toHaveCount(0);
 
   await expect(page.getByTestId(`coordinator-card-status-${remoteCoordinatorPubkey}`)).toHaveAttribute("data-state", "offline", { timeout: 15_000 });
+  await page.getByTestId("invite-panel").locator(
+    `[data-testid="coordinator-card"][data-coordinator-pubkey="${remoteCoordinatorPubkey}"]`,
+  ).focus();
   const remoteRoom = page.getByRole("button", {
     name: new RegExp(`^Open room ${title}, hosted by `),
   });

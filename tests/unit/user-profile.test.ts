@@ -180,6 +180,21 @@ describe("user profile helpers", () => {
     expect(store.error).toBe("");
   });
 
+  test("restores a selected NIP-07 session when the extension injects shortly after bootstrap", async () => {
+    localStorage.setItem(NIP07_SESSION_STORAGE_KEY, JSON.stringify({ version: 1, method: "nip07" }));
+    Reflect.deleteProperty(window, "nostr");
+    const store = new UserProfileStore();
+    const initialized = store.initialize("River");
+
+    window.setTimeout(() => {
+      Object.defineProperty(window, "nostr", { configurable: true, value: {} });
+    }, 5);
+
+    await initialized;
+    expect(store.method).toBe("nip07");
+    expect(store.pubkey).toBe(NIP07_PUBKEY);
+  });
+
   test("restores a selected NIP-07 session in a new store", async () => {
     const signedIn = new UserProfileStore();
     await signedIn.connectNip07();

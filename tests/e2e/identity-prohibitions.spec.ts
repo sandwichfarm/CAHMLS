@@ -340,8 +340,10 @@ test("renders one room per composite identity while verified v2 and legacy alias
   const coordinatorCards = page.getByTestId("coordinator-card");
   await expect(coordinatorCards.filter({ hasText: coordinatorALabel })).toHaveCount(1);
   await expect(coordinatorCards.filter({ hasText: coordinatorBLabel })).toHaveCount(1);
+  await coordinatorCards.filter({ hasText: coordinatorALabel }).focus();
   await expect(page.getByRole("button", { name: /^Open room North canonical room, hosted by North host/ })).toHaveCount(1);
   await expect(page.getByText("Legacy alias must not render", { exact: true })).toHaveCount(0);
+  await coordinatorCards.filter({ hasText: coordinatorBLabel }).focus();
   await expect(page.getByRole("button", { name: /^Open room South canonical room, hosted by South host/ })).toHaveCount(1);
   await expect(page.getByText("Legacy alias must not render", { exact: true })).toHaveCount(0);
 

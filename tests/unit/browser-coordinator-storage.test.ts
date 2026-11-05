@@ -1,13 +1,9 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
-
-vi.mock("@sqlite.org/sqlite-wasm", () => ({
-  default: vi.fn().mockRejectedValue(new Error("sqlite unavailable in unit tests")),
-}));
+import { beforeEach, describe, expect, test } from "vitest";
 
 import {
   clearPersistedCoordinatorState,
   createBrowserCoordinatorStorage,
-} from "../../src/cordn/coordinator/storage/browserSqliteStorage";
+} from "../../src/cordn/coordinator/storage/indexedDbSnapshotStorage";
 import { CoordinatorStore } from "../../src/coordinator/coordinator.svelte";
 
 describe("browser coordinator deleted-room persistence", () => {
@@ -15,7 +11,7 @@ describe("browser coordinator deleted-room persistence", () => {
     localStorage.clear();
   });
 
-  test("keeps tombstones across nonpersistent restarts and scopes them by coordinator", async () => {
+  test("keeps temporary tombstones only for the active in-memory owner", async () => {
     const firstStorage = await createBrowserCoordinatorStorage(false, "coordinator-a");
     firstStorage.deleteGroup("deleted-room");
     firstStorage.close();
@@ -26,32 +22,17 @@ describe("browser coordinator deleted-room persistence", () => {
       "coordinator-b",
     );
 
-    expect(restartedStorage.isGroupDeleted("deleted-room")).toBe(true);
+    expect(restartedStorage.isGroupDeleted("deleted-room")).toBe(false);
     expect(otherCoordinatorStorage.isGroupDeleted("deleted-room")).toBe(false);
 
     restartedStorage.close();
     otherCoordinatorStorage.close();
   });
 
-  test("merges tombstones into persistent snapshots", async () => {
-    const firstStorage = await createBrowserCoordinatorStorage(true, "coordinator-a");
-    firstStorage.deleteGroup("deleted-room");
-    firstStorage.close();
-
-    const restartedStorage = await createBrowserCoordinatorStorage(true, "coordinator-a");
-    const otherCoordinatorStorage = await createBrowserCoordinatorStorage(
-      true,
-      "coordinator-b",
-    );
-
-    expect(restartedStorage.toSnapshot().deletedGroups).toEqual(["deleted-room"]);
-    expect(otherCoordinatorStorage.isGroupDeleted("deleted-room")).toBe(false);
-    expect(() => restartedStorage.fetchGroupMessages({ groupId: "deleted-room" })).toThrow(
-      "Room deleted by host",
-    );
-
-    restartedStorage.close();
-    otherCoordinatorStorage.close();
+  test("requires an exact coordinator identity for durable browser storage", async () => {
+    await expect(createBrowserCoordinatorStorage(true, "coordinator-a")).rejects.toMatchObject({
+      kind: "unavailable",
+    });
   });
 
   test("clears coordinator-scoped tombstone registries with persisted state", async () => {
@@ -66,7 +47,7 @@ describe("browser coordinator deleted-room persistence", () => {
     restartedStorage.close();
   });
 
-  test("deletes through the stopped local coordinator store and records a debug entry", async () => {
+  test("does not pretend an ephemeral stopped coordinator deletion is durable", async () => {
     const coordinator = new CoordinatorStore();
     const coordinatorPubkey = coordinator.identity.publicKeyHex;
 
@@ -81,7 +62,7 @@ describe("browser coordinator deleted-room persistence", () => {
       details: "hosted-room",
     });
     const storage = await createBrowserCoordinatorStorage(false, coordinatorPubkey);
-    expect(storage.isGroupDeleted("hosted-room")).toBe(true);
+    expect(storage.isGroupDeleted("hosted-room")).toBe(false);
     storage.close();
   });
 

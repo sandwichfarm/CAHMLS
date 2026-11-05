@@ -5,15 +5,15 @@ milestone_name: Quality of Life & Polish
 current_phase: 18
 current_phase_name: Unified Presence, Notifications & Controls
 status: planning
-stopped_at: Completed 24-05-PLAN.md
-last_updated: "2026-08-07T00:24:19.818Z"
+stopped_at: Completed 27-03-PLAN.md
+last_updated: "2026-08-07T11:25:41.142Z"
 last_activity: 2026-08-07
-last_activity_desc: Phase 24 complete, transitioned to Phase 18
+last_activity_desc: Phase 26 complete; offline coordinator room disclosure verified
 progress:
-  total_phases: 9
-  completed_phases: 8
-  total_plans: 33
-  completed_plans: 31
+  total_phases: 12
+  completed_phases: 10
+  total_plans: 40
+  completed_plans: 37
 ---
 
 # Project State
@@ -30,17 +30,17 @@ See: .planning/PROJECT.md (updated 2026-08-02)
 Phase: 18 — Unified Presence, Notifications & Controls
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-08-07 — Phase 24 complete, transitioned to Phase 18
-Pull request: [#12 — participant chat interactions](https://github.com/sandwichfarm/CAHMLS/pull/12) — open, CI in progress. [#9](https://github.com/sandwichfarm/CAHMLS/pull/9) merged 2026-08-06.
+Last activity: 2026-08-07 — Phase 26 complete; offline coordinator room disclosure verified
+Pull request: [#13 — favorite groups and online-only invites](https://github.com/sandwichfarm/CAHMLS/pull/13) — open, stacked on [#12 — participant chat interactions](https://github.com/sandwichfarm/CAHMLS/pull/12). [#9](https://github.com/sandwichfarm/CAHMLS/pull/9) merged 2026-08-06.
 README refresh: [#16 — rewrite README for CAHMLS](https://github.com/sandwichfarm/CAHMLS/pull/16) — merged, outside phase scope.
 
-Progress: [██████████░░░░░░░░░░] 3/6 phases ([█████████░] 94%)
+Progress: [██████████░░░░░░░░░░] 3/6 phases ([█████████░] 93%)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 15
+- Total plans completed: 16
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -51,6 +51,7 @@ Progress: [██████████░░░░░░░░░░] 3/6 pha
 | 15 | 3 | - | - |
 | 16 | 6 | 2h+ | - |
 | 24 | 6 | - | - |
+| 25 | 1 | - | - |
 
 **Recent Trend:** No data yet
 
@@ -73,6 +74,10 @@ Progress: [██████████░░░░░░░░░░] 3/6 pha
 | Phase 24 P03 | 10 min | 2 tasks | 4 files |
 | Phase 24 P04 | 19 min | 2 tasks | 5 files |
 | Phase 24 P05 | 72min | 2 tasks | 5 files |
+| Phase 25-favorite-groups-invite-availability P01 | 9min | 3 tasks | 8 files |
+| Phase 27 P01 | 20m | 3 tasks | 13 files |
+| Phase 27-mobile-optimized-experience P02 | 1h 20m | 3 tasks | 8 files |
+| Phase 27-mobile-optimized-experience P03 | 59m | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -112,6 +117,14 @@ Recent decisions affecting current work:
 - [Phase ?]: Phase 24 participant menus and choosers pass an explicit 16px gutter, preserving the global overlay default.
 - [Phase ?]: Phase 24 highlight state is rendered from the typed persisted prop with named text, aria-pressed, and a visible selected marker.
 - [Phase ?]: Phase 24 participant and room identifiers are excluded from affected DOM IDs while focus restoration remains pane-local.
+- [Phase ?]: Favorites persist only validated coordinator-plus-room composite keys and reconcile against active rooms.
+- [Phase ?]: Shared invite Join defaults to unavailable and enables only for an exact online workspace reachability result.
+- [Phase ?]: Coordinator snapshots are validated IndexedDB records keyed only by normalized coordinator pubkey.
+- [Phase ?]: Coordinator stop waits for the serialized snapshot flush and preserves a live runtime on flush failure.
+- [Phase ?]: Mobile room navigation uses a single named drawer and preserves route-owned room callbacks.
+- [Phase ?]: Compact sheets coordinate through viewportOverlay and restore a visible exact opener.
+- [Phase ?]: Use one ref-counted VisualViewport document-root variable for mobile app height.
+- [Phase ?]: Use the shared overlay sheet below 900px without changing exact room or reaction callbacks.
 
 ### Pending Todos
 
@@ -146,6 +159,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-06T22:12:55.361Z
-Stopped at: Completed 24-05-PLAN.md
+Last session: 2026-08-07T11:25:41.135Z
+Stopped at: Completed 27-03-PLAN.md
 Resume file: None

@@ -18,8 +18,8 @@
   const titleId = $derived(`identity-${variant}-title`);
   const descriptionId = $derived(`identity-${variant}-description`);
   const impact = $derived(membershipCount === 0
-    ? "No local room memberships will be removed."
-    : `${membershipCount} local room membership${membershipCount === 1 ? " will" : "s will"} be removed.`);
+    ? "No active channels will be moved to History."
+    : `You will lose access to ${membershipCount} channel${membershipCount === 1 ? "" : "s"}. ${membershipCount === 1 ? "It" : "They"} will be moved to History.`);
 
   onMount(() => {
     dialog?.showModal();
@@ -80,7 +80,7 @@
           <h3>No local room memberships</h3>
           <p>This identity has no locally stored room access to remove.</p>
         {/if}
-        <p>This creates a new device-local identity. Your local room memberships on this device will be removed, and you’ll need a new invite before you can send in those rooms again. This does not delete coordinator-hosted room data for other participants.</p>
+        <p>This creates a new device-local identity. Previous channels remain as read-only local history, but you’ll need a new invite before you can send in them again. This does not delete coordinator-hosted room data for other participants.</p>
       {/if}
       {#if busy}<p class="live" aria-live="polite">{isRecovery ? "Creating…" : "Rotating…"}</p>{/if}
       {#if error}<p class="error" role="alert">{error}</p>{/if}

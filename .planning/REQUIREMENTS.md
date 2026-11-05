@@ -8,7 +8,7 @@
 ### Identity Continuity & Membership Integrity
 
 - [x] **IDEN-01**: An anonymous identity, including its signing key and local profile, survives ordinary page reloads and browser restarts on the same device.
-- [x] **IDEN-02**: An anonymous user can deliberately rotate to a fresh identity from the identity menu after a confirmation that explains the room-membership consequences.
+- [x] **IDEN-02**: An anonymous user can deliberately rotate to a fresh identity from the identity menu only after confirming that active channel access will be lost and those channels will move to History.
 - [x] **IDEN-03**: Rotating an anonymous identity retires the old identity's active room credentials locally so the new identity cannot send to rooms it has not joined.
 - [x] **IDEN-04**: Reloading or restarting an ephemeral host does not create duplicate coordinator or room entries for participants; stored sessions are keyed and reconciled by stable coordinator and room identities.
 
@@ -103,6 +103,26 @@
 - [x] **FOLLOW-02**: Following a participant serially merges a new `p` tag into the newest validated kind-3 event, preserves unrelated tags and content, signs a strictly newer replacement, publishes it to the configured social relays, and does not report success until publication succeeds.
 - [x] **HILITE-01**: A viewer can choose or clear a participant highlight color; the preference persists between browser sessions and is rendered consistently in both host and invitee chat views without reducing text contrast.
 
+### Favorite Groups & Invite Availability
+
+- [x] **FAV-01**: Every active sidebar group exposes an accessible favorite toggle both as a star revealed by row hover or keyboard focus and in its three-dot menu; the exact coordinator-and-room favorite state persists across browser sessions.
+- [x] **FAV-02**: Favorited groups are duplicated in a dedicated Favorites section above all coordinator groups while remaining in their original coordinator section, and unfavoriting removes only the duplicate.
+- [x] **INVMSG-02**: A rendered room invite is actionable only while its referenced coordinator is known online; otherwise it is visibly subdued, disabled, uses a not-allowed pointer, and exposes the reason “Coordinator is offline” by tooltip and accessible text.
+
+### Offline Coordinator Rooms
+
+- [x] **SIDE-07**: An offline remote coordinator hides its room rows behind a compact “N chats offline” summary by default; hovering or keyboard-focusing the card reveals those navigable historical chats with restrained motion and a reduced-motion fallback.
+
+### Mobile-Optimized Experience
+
+- [x] **MOBILE-01**: Every primary coordinator, room, chat, invitation, identity, notification, and settings interaction is operable by a single touchscreen tap without requiring hover, a hardware keyboard, or an invisible hit target.
+- [x] **MOBILE-02**: Mobile navigation uses a deliberate single-pane drawer/sheet model that keeps the active conversation primary, makes coordinator and room switching discoverable, and closes predictably after navigation, outside-tap, or platform back/Escape actions.
+- [x] **MOBILE-03**: At supported phone portrait, phone landscape, and short-height viewports, controls meet a 44-by-44 CSS-pixel touch target, overlays remain contained and scrollable, and the focused composer or form action remains reachable while the viewport is reduced by an onscreen keyboard.
+- [x] **MOBILE-04**: A fresh mobile user can choose an identity, start and stop the coordinator, create a room, invite and admit a participant, exchange encrypted messages and reactions in both directions, manage the room, and return after reload using touch interaction alone.
+- [x] **MOBILE-05**: Durable coordinator state is stored asynchronously in IndexedDB under the exact coordinator identity, survives reload and browser restart, and preserves the full validated coordinator snapshot without synchronous whole-snapshot writes on the UI thread.
+- [x] **MOBILE-06**: Coordinator startup, mutation, stop, and restart handle unavailable, denied, corrupt, or quota-exhausted persistent storage without recursive failure, cross-identity state attachment, secret-bearing diagnostics, or a falsely successful durability claim.
+- [ ] **MOBILE-07**: Automated mobile-browser coverage uses real touch-enabled Playwright device contexts to prove the complete coordinator and two-client chat journeys on Chromium and WebKit, including tap-only affordances, overlay dismissal, narrow/landscape layouts, reload continuity, and storage failure recovery.
+
 ## Future Requirements
 
 ### Notification Expansion
@@ -120,7 +140,7 @@
 | Server-side identity or notification accounts | The application remains browser-resident and self-sovereign. |
 | Email, SMS, or push-service notification backend | This milestone covers local in-app and browser notifications only. |
 | Replacing MLS or ContextVM transport protocols | The milestone repairs continuity and presentation around the existing protocol stack. |
-| Full mobile-first redesign | Layout must remain coherent, but this milestone targets the current desktop workspace. |
+| Native iOS or Android application shells | Phase 27 delivers a browser-resident mobile experience and does not add native application packages. |
 | Historical access after explicit identity rotation | Rotation is a deliberate privacy boundary; old credentials are retired unless the old identity is restored separately. |
 
 ## Traceability
@@ -187,11 +207,22 @@
 | FOLLOW-01 | Phase 24 | Complete |
 | FOLLOW-02 | Phase 24 | Complete |
 | HILITE-01 | Phase 24 | Complete |
+| FAV-01 | Phase 25 | Complete |
+| FAV-02 | Phase 25 | Complete |
+| INVMSG-02 | Phase 25 | Complete |
+| SIDE-07 | Phase 26 | Complete |
+| MOBILE-01 | Phase 27 | Complete |
+| MOBILE-02 | Phase 27 | Complete |
+| MOBILE-03 | Phase 27 | Complete |
+| MOBILE-04 | Phase 27 | Complete |
+| MOBILE-05 | Phase 27 | Complete |
+| MOBILE-06 | Phase 27 | Complete |
+| MOBILE-07 | Phase 27 | Pending |
 
 **Coverage:**
 
-- v1.1 requirements: 56 total
-- Mapped to phases: 56
+- v1.1 requirements: 64 total
+- Mapped to phases: 64
 - Unmapped: 0 ✓
 
 ---

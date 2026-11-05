@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import type { StoredRoom } from "../../src/chat/room-store";
-import { archiveSidebarRoom, emptySidebarLedger, parseSidebarLedger, reconcileSidebarLedger, serializeSidebarLedger } from "../../src/chat/sidebar-ledger";
+import { roomIdentityKey, type StoredRoom } from "../../src/chat/room-store";
+import { archiveSidebarRoom, emptySidebarLedger, parseSidebarLedger, reconcileSidebarLedger, serializeSidebarLedger, toggleSidebarFavorite } from "../../src/chat/sidebar-ledger";
 
 function room(id: string, coordinatorPubkey: string, createdAt: number, overrides: Partial<StoredRoom> = {}): StoredRoom {
   return {
@@ -50,5 +50,33 @@ describe("sidebar ledger", () => {
 
     expect(second.history.map(({ archivedAt }) => archivedAt)).toEqual([100, 100]);
     expect(second.history.map(({ roomId }) => roomId)).toEqual(first.history.map(({ roomId }) => roomId));
+  });
+
+  test("normalizes valid composite favorites independently and retires stale keys", () => {
+    const firstCoordinator = "a".repeat(64);
+    const secondCoordinator = "b".repeat(64);
+    const first = room("same-id", firstCoordinator, 1);
+    const second = room("same-id", secondCoordinator, 2);
+    const firstKey = roomIdentityKey(firstCoordinator, first.id);
+    const secondKey = roomIdentityKey(secondCoordinator, second.id);
+    const parsed = parseSidebarLedger(JSON.stringify({
+      version: 1,
+      coordinatorOrder: [secondCoordinator],
+      roomOrder: { [secondCoordinator]: [secondKey] },
+      history: [],
+      favorites: [firstKey, firstKey, `not-a-pubkey\u0000same-id`, `${firstCoordinator}\u0000`, 42],
+    }));
+
+    expect(parsed.coordinatorOrder).toEqual([secondCoordinator]);
+    expect(parsed.favorites).toEqual([firstKey]);
+
+    const toggled = toggleSidebarFavorite(parsed, second);
+    expect(toggled.favorites).toEqual([firstKey, secondKey]);
+    const reconciled = reconcileSidebarLedger(toggled, [first, second], firstCoordinator, "Mine");
+    expect(reconciled.ledger.favorites).toEqual([firstKey, secondKey]);
+
+    const afterRemoval = reconcileSidebarLedger(reconciled.ledger, [second], firstCoordinator, "Mine");
+    expect(afterRemoval.ledger.favorites).toEqual([secondKey]);
+    expect(afterRemoval.activeRooms.map((storedRoom) => roomIdentityKey(storedRoom.coordinatorPubkey, storedRoom.id))).toEqual([secondKey]);
   });
 });

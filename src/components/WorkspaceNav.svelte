@@ -9,6 +9,7 @@
   import RoomActionsMenu from "./RoomActionsMenu.svelte";
   import RoomHostBadge from "./RoomHostBadge.svelte";
   import RoomRemovalDialog from "./RoomRemovalDialog.svelte";
+  import RoomBrowser from "./RoomBrowser.svelte";
 
   interface Props {
     currentUrl: string;
@@ -385,7 +386,7 @@
     <button
       class="browse-button"
       type="button"
-      aria-label={`Rooms, ${roomCount} available`}
+      aria-label="Open room browser"
       aria-haspopup="dialog"
       aria-expanded={open}
       aria-controls="room-switcher"
@@ -404,14 +405,7 @@
 
   {#if showRoomBrowser && open}
     <button class="nav-scrim" type="button" aria-label="Close room switcher" onclick={() => open = false}></button>
-    <div id="room-switcher" class="room-switcher" role="dialog" aria-label="Choose a server or room" data-testid="room-switcher">
-      <header class="switcher-header">
-        <div>
-          <p>Rooms & coordinators</p>
-          <span>Move between conversations without disconnecting your home coordinator.</span>
-        </div>
-        <button type="button" aria-label="Close room switcher" onclick={() => open = false}>×</button>
-      </header>
+    <RoomBrowser {open} onClose={() => open = false}>
 
       <div class="server-section">
         <div class="server-heading">
@@ -424,9 +418,16 @@
           <button class="workspace-link" type="button" onclick={() => navigate("/")}>Workspace</button>
         </div>
         {#if homeRooms.length === 0}
-          <button class="empty-room" type="button" onclick={() => navigate("/")}>
-            <span>Create your first room</span><span aria-hidden="true">＋</span>
-          </button>
+          {#if coordinator}
+            <button class="empty-room" type="button" onclick={() => navigate("/")}>
+              <span>No groups yet. Create group</span><span aria-hidden="true">＋</span>
+            </button>
+          {:else}
+            <div class="empty-room">
+              <strong>No chats saved on this device.</strong>
+              <button type="button" onclick={() => navigate("/")}>Join from invite</button>
+            </div>
+          {/if}
         {:else}
           <div class="room-list">
             {#each homeRooms as room (roomIdentityKey(room.coordinatorPubkey, room.id))}
@@ -500,7 +501,7 @@
           </div>
         </div>
       {/each}
-    </div>
+    </RoomBrowser>
   {/if}
   {#if removalRoom}
     <RoomRemovalDialog mode={removalModeFor(removalRoom)} roomTitle={removalRoom.title} hostLabel={hostIdentityForRoom(removalRoom).name} coordinatorLabel={coordinatorLabelFor(removalRoom)} messageCount={removalRoom.messages.length} joinRequestPending={removalRoom.joinRequestSent === true} onConfirm={confirmRemoval} onClose={closeRemoval} />
@@ -536,12 +537,6 @@
   .server-notice::after { position: absolute; inset: -.25rem; border: 1px solid rgb(124 245 157 / .55); border-radius: inherit; content: ""; animation: server-notice-pulse 1.8s ease-out infinite; }
   .embedded-notice { margin-left: .1rem; }
   .nav-scrim { position: fixed; z-index: 79; inset: 0; border: 0; background: rgb(0 0 0 / .42); cursor: default; backdrop-filter: blur(2px); }
-  .room-switcher { position: fixed; z-index: 80; top: 3.7rem; left: .75rem; width: min(27rem, calc(100vw - 1.5rem)); max-height: min(38rem, calc(100dvh - 4.45rem)); overflow-y: auto; border: 1px solid #496451; background: rgb(7 12 9 / .99); box-shadow: 0 24px 64px rgb(0 0 0 / .62); }
-  .switcher-header { position: sticky; z-index: 1; top: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; border-bottom: 1px solid #293832; background: rgb(9 14 11 / .97); padding: 1rem; backdrop-filter: blur(12px); }
-  .switcher-header p { color: #effff2; font-size: .8rem; font-weight: 650; }
-  .switcher-header span { display: block; max-width: 19rem; margin-top: .35rem; color: #82958a; font-size: .65rem; line-height: 1.45; }
-  .switcher-header button { color: #91a59a; font-size: 1.1rem; line-height: 1; }
-  .switcher-header button:hover { color: white; }
   .server-section { border-bottom: 1px solid #243229; padding: .65rem; }
   .server-section:last-child { border-bottom: 0; }
   .server-heading { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .65rem; padding: .25rem .35rem .55rem; }
@@ -579,7 +574,6 @@
 
   @media (min-width: 520px) {
     .browse-label { display: block; }
-    .room-switcher { left: 1rem; }
   }
 
   @media (max-width: 700px) {

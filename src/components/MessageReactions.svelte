@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ReactionSummary } from "../chat/room-store";
   import { CHAT_EMOJI_SHORTCUTS, type ChatEmojiShortcut } from "../chat/protocol";
+  import { viewportOverlay } from "../lib/viewport-overlay";
 
   interface Props {
     messageId: string;
@@ -32,6 +33,7 @@
 
   const triggerId = $derived(`${idPrefix}-add-reaction-${messageId}`);
   const menuId = $derived(`${idPrefix}-reaction-menu-${messageId}`);
+  let trigger = $state<HTMLButtonElement>();
 
   function closeAfterFocusLeaves(event: FocusEvent): void {
     const next = event.relatedTarget;
@@ -50,6 +52,7 @@
 >
   {#if canReact}
     <button
+      bind:this={trigger}
       id={triggerId}
       type="button"
       class="reaction-add"
@@ -89,7 +92,7 @@
   {/if}
 
   {#if canReact && pickerOpen}
-    <div id={menuId} class="reaction-picker" role="menu" aria-label={`Choose reaction for message from ${authorName}`}>
+    <div id={menuId} use:viewportOverlay={{ anchor: trigger, preferredSide: "above", align: "start", compactSheetBelow: 900 }} class="reaction-picker" role="menu" aria-label={`Choose reaction for message from ${authorName}`}>
       {#each CHAT_EMOJI_SHORTCUTS as emoji (emoji)}
         <button
           type="button"
@@ -244,7 +247,14 @@
     .reaction-picker { max-width: min(17rem, calc(100vw - 2rem)); overflow-x: auto; }
   }
 
-  @media (hover: none) {
+  @media (max-width: 900px) {
+    .reaction-add, .reaction-chip, .reaction-picker button { min-width: 44px; min-height: 44px; }
+    .reaction-add { width: 44px; border-radius: 0; }
+    .reaction-picker { display: grid; width: min(24rem, calc(100vw - 16px)); grid-template-columns: repeat(3, minmax(44px, 1fr)); gap: 4px; padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); }
+    .reaction-picker::after { display: none; }
+  }
+
+  @media (hover: none), (pointer: coarse) {
     .reaction-add { opacity: 1; pointer-events: auto; transform: none; }
   }
 </style>

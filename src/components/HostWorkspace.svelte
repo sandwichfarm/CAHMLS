@@ -7,11 +7,11 @@
   import type { CoordinatorStore } from "../coordinator/coordinator.svelte";
   import type { HostedRoomRecoveryAdapter, HostedRoomRecoveryTarget } from "../coordinator/types";
   import type { ConfigStore } from "../config/config.svelte";
-  import { createInviteUrl, normalizeRoomHostIdentity, parseInviteUrl } from "../chat/invite";
+  import { createInviteUrl, normalizeRoomHostIdentity, parseInviteMessage, parseInviteUrl } from "../chat/invite";
   import type { ChatPaneContext } from "../chat/chat-pane-context";
   import { createSameShellAutoJoinHref, createSameShellChatHref } from "../chat/room-navigation";
   import { ChatRoomSession, coordinatorUnreadTotal, createHostedRoom, hostIdentityForRoom, listRooms, loadLastOpenRoom, loadRoom, reactionSummary, rememberActiveHostRoom, rememberLastOpenRoom, removeStoredRoom, roomIdentityKey, roomUnreadCount, ROOMS_CHANGED_EVENT, rotateRoomInvite, sameRoomIdentity, saveRoom, SERVER_OFFLINE_EVENT, SERVER_ONLINE_EVENT, type RoomIdentity, type StoredRoom } from "../chat/room-store";
-  import { emptySidebarLedger, parseSidebarLedger, reconcileSidebarLedger, serializeSidebarLedger, SIDEBAR_LEDGER_KEY, type SidebarHistoryEntry, type SidebarLedger } from "../chat/sidebar-ledger";
+  import { emptySidebarLedger, isSidebarFavorite, parseSidebarLedger, reconcileSidebarLedger, serializeSidebarLedger, SIDEBAR_LEDGER_KEY, toggleSidebarFavorite, type SidebarHistoryEntry, type SidebarLedger } from "../chat/sidebar-ledger";
   import { CHAT_EMOJI_SHORTCUTS, normalizeRecipientPubkeys, type ChatEmojiShortcut } from "../chat/protocol";
   import { projectMessagePresentation } from "../chat/message-presentation";
   import { chatParticipantPreferences, type ParticipantHighlightName } from "../chat/chat-participant-preferences.svelte";
@@ -45,6 +45,8 @@
   import { projectStartupSignal } from "./startup-signal-presentation";
   import UserProfile from "./UserProfile.svelte";
   import WorkspaceNav from "./WorkspaceNav.svelte";
+  import { createMobileOverlayController } from "./mobile-overlay.svelte";
+  import { mountAppVisualViewport } from "./app-visual-viewport";
   import { userProfileStore } from "../identity/user-profile.svelte";
   import { channelPreferences } from "../notifications/channel-preferences.svelte";
 
@@ -87,9 +89,11 @@
   let hostedRooms = $state<HostedRoomEntry[]>([]);
   let homeJoinedRooms = $state<StoredRoom[]>([]);
   let remoteRooms = $state<StoredRoom[]>([]);
+  let activeSidebarRooms = $state<StoredRoom[]>([]);
   let previousLocalRooms = $state<StoredRoom[]>([]);
   let sidebarLedger = $state<SidebarLedger>(emptySidebarLedger());
   let sidebarHistory = $state<SidebarHistoryEntry[]>([]);
+  let favoriteRevealRoomKey = $state<string | null>(null);
   let composer = $state("");
   let pendingRecipientPubkeys = $state<string[]>([]);
   const expandedIgnoredStreaks = new SvelteSet<string>();
@@ -117,6 +121,13 @@
   let managementOpen = $state(false);
   let compactViewport = $state(false);
   let mobileRailOpen = $state(false);
+  let mobileChildSurfaceOpen = $state(false);
+  let mobileChildSurfaceRestoresDrawer = false;
+  let mobileOverlay = $state<ReturnType<typeof createMobileOverlayController> | null>(null);
+  let hostChatElement = $state<HTMLElement>();
+  let mobileRoomBrowser = $state<HTMLElement>();
+  let mobileRoomBrowserTrigger = $state<HTMLButtonElement>();
+  let mobileRoomBrowserClose = $state<HTMLButtonElement>();
   let mobileToolsOpen = $state(false);
   let mobileToolsTrigger = $state<HTMLButtonElement>();
   let refreshState = $state<"idle" | "refreshing" | "refreshed">("idle");
@@ -163,6 +174,9 @@
     }
     return Object.values(groups);
   });
+  const favoriteRoomItems = $derived.by(() => activeSidebarRooms
+    .filter((storedRoom) => isSidebarFavorite(sidebarLedger, storedRoom))
+    .map(sidebarRoomItem));
   const previousLocalServers = $derived.by(() => {
     const groups: Record<string, RemoteServerGroup> = {};
     for (const storedRoom of previousLocalRooms) {
@@ -333,6 +347,15 @@
   });
 
   $effect(() => {
+    // Shared invites can introduce a coordinator before the recipient has a
+    // stored room for it. Track both message panes so those invitations are
+    // probed as soon as they render or receive another message.
+    void room?.messages;
+    void embeddedChatContext?.room?.messages;
+    probeRemoteCoordinatorsIfTargetsChanged();
+  });
+
+  $effect(() => {
     const activeSession = session;
     const activeRoom = room;
     const identity = currentHostIdentity();
@@ -390,6 +413,11 @@
       knownMessageIds = new Set(nextRoom.messages.map((message) => message.id));
       if (e2eBuild) e2eSessionMessageIds = session.room.messages.map((message) => message.id).join(",");
       room = nextRoom;
+      // Session updates are the authoritative host-message change signal.
+      // Probe immediately after replacing the rendered room so an invite-only
+      // coordinator can transition from disabled to joinable without waiting
+      // for the interval or a route change.
+      probeRemoteCoordinatorsIfTargetsChanged();
       pendingJoinRequests = [...session.pendingJoinRequests];
       admissionError = session.admissionError;
       hostedRooms = hostedRooms.map((entry) => sameRoomIdentity(entry.room, nextRoom) ? { ...entry, room: nextRoom } : entry);
@@ -586,6 +614,53 @@
     return createSameShellChatHref(window.location.origin, nextRoom);
   }
 
+  function sidebarRoomItem(storedRoom: StoredRoom) {
+    const hosted = storedRoom.isHost && storedRoom.coordinatorPubkey === coordinatorPubkey
+      ? hostedRooms.find((entry) => sameRoomIdentity(entry.room, storedRoom))
+      : undefined;
+    return {
+      room: storedRoom,
+      inviteUrl: hosted?.inviteUrl ?? remoteRoomHref(storedRoom),
+      removalMode: storedRoom.isHost && storedRoom.coordinatorPubkey === coordinatorPubkey ? "delete" as const : "leave" as const,
+    };
+  }
+
+  function sidebarLedgerHasContent(ledger: SidebarLedger): boolean {
+    return ledger.coordinatorOrder.length > 0
+      || ledger.history.length > 0
+      || ledger.favorites.length > 0
+      || Object.values(ledger.roomOrder).some((order) => order.length > 0);
+  }
+
+  function persistSidebarLedger(ledger: SidebarLedger): void {
+    sidebarLedger = ledger;
+    try {
+      if (sidebarLedgerHasContent(ledger)) localStorage.setItem(SIDEBAR_LEDGER_KEY, serializeSidebarLedger(ledger));
+      else localStorage.removeItem(SIDEBAR_LEDGER_KEY);
+    } catch { /* favorites remain available for the current session */ }
+  }
+
+  function toggleFavoriteRoom(target: StoredRoom, origin: HTMLButtonElement | undefined = undefined): void {
+    const wasFavorite = isSidebarFavorite(sidebarLedger, target);
+    const targetKey = roomIdentityKey(target.coordinatorPubkey, target.id);
+    // Keep the source row in its coordinator card while its Favorites copy is
+    // removed, including when that card had collapsed the row past its limit.
+    if (wasFavorite && origin) favoriteRevealRoomKey = targetKey;
+    persistSidebarLedger(toggleSidebarFavorite(sidebarLedger, target));
+    if (!wasFavorite || !origin) return;
+    void tick().then(() => {
+      const sourceRow = [...document.querySelectorAll<HTMLElement>(".coordinator-card-list [data-room-key]")]
+        .find((element) => element.dataset.roomKey === targetKey);
+      const sourceFocusTarget = sourceRow?.querySelector<HTMLButtonElement>(".channel-row-primary");
+      if (sourceFocusTarget) {
+        sourceFocusTarget.focus();
+        return;
+      }
+
+      document.querySelector<HTMLButtonElement>(".coordinator-card-list .coordinator-reveal")?.focus();
+    });
+  }
+
   function shortKey(pubkey: string): string {
     return `${pubkey.slice(0, 6)}…${pubkey.slice(-4)}`;
   }
@@ -601,23 +676,30 @@
 
   function reachabilityTargets(): Array<{ pubkey: string; relayUrls: string[] }> {
     const targets: Record<string, string[]> = {};
-    const addRoom = (storedRoom: StoredRoom) => {
-      if (!storedRoom.coordinatorPubkey || storedRoom.coordinatorPubkey === coordinatorPubkey) return;
-      const relays = targets[storedRoom.coordinatorPubkey] ?? [];
-      for (const relayUrl of storedRoom.relayUrls) {
+    const addTarget = (pubkey: string, relayUrls: readonly string[]) => {
+      if (!pubkey || pubkey === coordinatorPubkey) return;
+      const relays = targets[pubkey] ?? [];
+      for (const relayUrl of relayUrls) {
         if (!relays.includes(relayUrl)) relays.push(relayUrl);
       }
-      targets[storedRoom.coordinatorPubkey] = relays;
+      targets[pubkey] = relays;
+    };
+    const addRoom = (storedRoom: StoredRoom) => {
+      addTarget(storedRoom.coordinatorPubkey, storedRoom.relayUrls);
+    };
+    const addSharedInvites = (messages: readonly { content: string }[]) => {
+      for (const message of messages) {
+        const sharedInvite = parseInviteMessage(message.content);
+        if (sharedInvite) addTarget(sharedInvite.coordinatorPubkey, sharedInvite.relayUrls);
+      }
     };
 
     for (const storedRoom of remoteRooms) addRoom(storedRoom);
     for (const storedRoom of previousLocalRooms) addRoom(storedRoom);
+    if (room) addSharedInvites(room.messages);
+    if (embeddedChatContext?.room) addSharedInvites(embeddedChatContext.room.messages);
     if (activeIntentInvite && activeIntentInvite.coordinatorPubkey !== coordinatorPubkey) {
-      const relays = targets[activeIntentInvite.coordinatorPubkey] ?? [];
-      for (const relayUrl of activeIntentInvite.relayUrls) {
-        if (!relays.includes(relayUrl)) relays.push(relayUrl);
-      }
-      targets[activeIntentInvite.coordinatorPubkey] = relays;
+      addTarget(activeIntentInvite.coordinatorPubkey, activeIntentInvite.relayUrls);
     }
 
     return Object.entries(targets).map(([pubkey, relayUrls]) => ({ pubkey, relayUrls }));
@@ -648,6 +730,10 @@
       if (connection === "offline" || connection === "deleted") return "offline";
     }
     return measured ?? "unknown";
+  }
+
+  function inviteCoordinatorReachability(pubkey: string): CoordinatorReachability {
+    return pubkey === coordinatorPubkey ? localCoordinatorStatus : externalCoordinatorReachability(pubkey);
   }
 
   function reachabilityLabel(state: CoordinatorReachability): string {
@@ -729,13 +815,11 @@
     sidebarLedger = projection.ledger;
     sidebarHistory = projection.history;
     try {
-      const ledgerHasContent = projection.ledger.coordinatorOrder.length > 0
-        || projection.ledger.history.length > 0
-        || Object.values(projection.ledger.roomOrder).some((order) => order.length > 0);
-      if (ledgerHasContent) localStorage.setItem(SIDEBAR_LEDGER_KEY, serializeSidebarLedger(projection.ledger));
+      if (sidebarLedgerHasContent(projection.ledger)) localStorage.setItem(SIDEBAR_LEDGER_KEY, serializeSidebarLedger(projection.ledger));
       else localStorage.removeItem(SIDEBAR_LEDGER_KEY);
     } catch { /* presentation order remains in memory */ }
     const activeRooms = projection.activeRooms;
+    activeSidebarRooms = activeRooms;
     hostedRooms = activeRooms
       .filter((storedRoom) => storedRoom.isHost && storedRoom.coordinatorPubkey === coordinatorPubkey)
       .map(buildHostedRoomEntry);
@@ -777,7 +861,7 @@
 
   async function openCreateDialog() {
     serverMenuOpen = false;
-    mobileRailOpen = false;
+    closeMobileRoomBrowser(false);
     mobileToolsOpen = false;
     title = "";
     error = "";
@@ -871,6 +955,7 @@
   }
 
   function openInviteDialog() {
+    closeMobileRoomBrowser(false);
     if (room) {
       const entry = buildHostedRoomEntry(room);
       room = entry.room;
@@ -918,7 +1003,7 @@
 
   async function selectRoom(entry: HostedRoomEntry) {
     inviteDialogOpen = false;
-    mobileRailOpen = false;
+    closeMobileRoomBrowser(false, hasChatIntent);
     mobileToolsOpen = false;
     selectedServerPubkey = coordinatorPubkey;
     const latest = loadRoom(entry.room.id, entry.room.coordinatorPubkey) ?? entry.room;
@@ -928,10 +1013,12 @@
     inviteUrl = refreshedEntry.inviteUrl;
     qrUrl = refreshedEntry.qrUrl;
     if (hasChatIntent) onNavigate("/");
+    await tick();
+    document.querySelector<HTMLElement>("[data-testid='active-conversation-heading']")?.focus();
   }
 
   function navigateFromRail(href: string): void {
-    mobileRailOpen = false;
+    closeMobileRoomBrowser(false, true);
     mobileToolsOpen = false;
     onNavigate(href);
   }
@@ -1002,14 +1089,34 @@
   }
 
   function openSettings(): void {
-    mobileRailOpen = false;
+    closeMobileRoomBrowser(false);
     mobileToolsOpen = false;
     settingsDialogOpen = true;
   }
 
+  async function openMobileRoomBrowser(): Promise<void> {
+    mobileRailOpen = true;
+    await tick();
+    if (!mobileOverlay || !mobileRoomBrowser) return;
+    mobileOverlay.open({
+      id: "room-browser",
+      element: mobileRoomBrowser,
+      opener: mobileRoomBrowserTrigger,
+      initialFocus: mobileRoomBrowserClose,
+      safeScrim: true,
+      onClose: () => { mobileRailOpen = false; },
+    });
+  }
+
+  function closeMobileRoomBrowser(restoreFocus = true, keepHistory = false): void {
+    if (mobileOverlay?.activeId === "room-browser") mobileOverlay.close({ restoreFocus, keepHistory });
+    else mobileRailOpen = false;
+  }
+
   function toggleMobileRail(): void {
     mobileToolsOpen = false;
-    mobileRailOpen = !mobileRailOpen;
+    if (mobileRailOpen) closeMobileRoomBrowser();
+    else void openMobileRoomBrowser();
   }
 
   function closeMobileTools(restoreFocus = true): void {
@@ -1019,7 +1126,7 @@
   }
 
   function toggleManagement(): void {
-    mobileRailOpen = false;
+    closeMobileRoomBrowser(false);
     mobileToolsOpen = false;
     managementOpen = !managementOpen;
   }
@@ -1309,6 +1416,7 @@
   }
 
   onDestroy(() => {
+    mobileOverlay?.destroy();
     reachabilityProbeGeneration += 1;
     if (reachabilityTimer !== null) window.clearInterval(reachabilityTimer);
     reachabilityTimer = null;
@@ -1322,6 +1430,14 @@
     session?.stop();
   });
   onMount(() => {
+    const visualViewport = mountAppVisualViewport(document.documentElement);
+    if (hostChatElement) {
+      mobileOverlay = createMobileOverlayController({
+        applicationRoot: hostChatElement,
+        backgroundRoots: [hostChatElement],
+        fallbackFocus: hostChatElement,
+      });
+    }
     setupWasCompleteOnMount = config.isSetupComplete;
     const closeDialogsOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -1330,11 +1446,26 @@
       const targetMessageId = reactionPickerMessageId;
       reactionPickerMessageId = null;
       if (targetMessageId) void tick().then(() => document.getElementById(`host-add-reaction-${targetMessageId}`)?.focus());
-      mobileRailOpen = false;
+      closeMobileRoomBrowser();
       closeMobileTools();
       if (inviteDialogOpen) closeInviteDialog();
       if (createDialogOpen) closeCreateDialog();
       settingsDialogOpen = false;
+    };
+    const closeDrawerForMobileSurface = () => {
+      // Sheets reposition on every scroll and resize, so only the opening
+      // transition may decide whether the drawer owns this child surface.
+      if (!mobileChildSurfaceOpen) mobileChildSurfaceRestoresDrawer = mobileRailOpen;
+      mobileChildSurfaceOpen = true;
+      closeMobileRoomBrowser(false);
+    };
+    const clearMobileChildSurface = () => {
+      mobileChildSurfaceOpen = false;
+      // Only re-open the drawer when the sheet's trigger lived inside it, so
+      // focus returns to real UI. A sheet opened from the chat surface must
+      // never raise a drawer the reader did not ask for.
+      if (compactViewport && mobileChildSurfaceRestoresDrawer) mobileRailOpen = true;
+      mobileChildSurfaceRestoresDrawer = false;
     };
     refreshRemoteRooms();
     const compactQuery = window.matchMedia("(max-width: 900px)");
@@ -1381,10 +1512,13 @@
     window.addEventListener("online", recheckBrowserOnline);
     document.addEventListener("visibilitychange", recheckWhenVisible);
     window.addEventListener("keydown", closeDialogsOnEscape);
+    window.addEventListener("cahmls:mobile-overlay-open", closeDrawerForMobileSurface);
+    window.addEventListener("cahmls:mobile-overlay-close", clearMobileChildSurface);
     const acknowledgeOnVisibility = () => acknowledgeVisibleHostRoom();
     document.addEventListener("visibilitychange", acknowledgeOnVisibility);
     reachabilityTimer = window.setInterval(() => void probeRemoteCoordinators(), 12_000);
     return () => {
+      visualViewport.destroy();
       reachabilityProbeGeneration += 1;
       if (reachabilityTimer !== null) window.clearInterval(reachabilityTimer);
       reachabilityTimer = null;
@@ -1396,6 +1530,8 @@
       window.removeEventListener("online", recheckBrowserOnline);
       document.removeEventListener("visibilitychange", recheckWhenVisible);
       window.removeEventListener("keydown", closeDialogsOnEscape);
+      window.removeEventListener("cahmls:mobile-overlay-open", closeDrawerForMobileSurface);
+      window.removeEventListener("cahmls:mobile-overlay-close", clearMobileChildSurface);
       document.removeEventListener("visibilitychange", acknowledgeOnVisibility);
       compactQuery.removeEventListener("change", syncCompactViewport);
     };
@@ -1421,6 +1557,7 @@
       <div class:guided-setup={guidedSetupMode} class="host-commandbar">
         {#if !setupRequired}
           <button
+            bind:this={mobileRoomBrowserTrigger}
             class:active={mobileRailOpen}
             class="mobile-rail-toggle"
             type="button"
@@ -1463,6 +1600,10 @@
       </div>
     </header>
 
+    {#if coordinator.snapshotPersistence === "flushing"}
+      <p class="absolute right-4 top-16 z-30 border border-[#e4e78d] bg-[#101614] px-3 py-2 text-xs text-[#e4e78d]" role="status">Stopping and saving…</p>
+    {/if}
+
     <div
       class:management-open={managementOpen}
       class:startup-mode={coordinator.status === "starting" || coordinator.status === "stopping"}
@@ -1471,21 +1612,29 @@
       class="host-layout grid min-h-0 min-w-0"
     >
       {#if mobileRailOpen && compactViewport}
-        <button class="mobile-rail-scrim" type="button" aria-label="Close room browser" onclick={() => mobileRailOpen = false}></button>
+        <button class="mobile-rail-scrim" type="button" aria-label="Close room browser" onclick={() => mobileOverlay?.dismissFromScrim()}></button>
       {/if}
       {#if !setupRequired}
       <aside
+        bind:this={mobileRoomBrowser}
         id="host-room-rail"
         class:mobile-open={mobileRailOpen}
         class="host-rail min-h-0 min-w-0 overflow-y-auto border-b border-[#21352a] p-3 sm:p-4 lg:border-r lg:border-b-0"
         data-testid="invite-panel"
         data-local-rail-state={localRailState}
         aria-busy={localRailBusy}
-        aria-hidden={compactViewport && !mobileRailOpen}
-        inert={compactViewport && !mobileRailOpen}
+        aria-hidden={compactViewport && !mobileRailOpen && !mobileChildSurfaceOpen}
+        inert={compactViewport && !mobileRailOpen && !mobileChildSurfaceOpen}
+        role={compactViewport ? "dialog" : undefined}
+        aria-modal={compactViewport && mobileRailOpen ? "true" : undefined}
+        aria-label={compactViewport ? "Rooms" : undefined}
       >
         <span class="sr-only" aria-live="polite">{unreadAnnouncement}</span>
         <div class="flex min-h-full flex-col gap-4">
+            <header class="room-browser-mobile-heading">
+              <h2>Rooms</h2>
+              <button bind:this={mobileRoomBrowserClose} type="button" aria-label="Close room browser" onclick={() => closeMobileRoomBrowser()}>Close room browser</button>
+            </header>
             <div class="rail-join"><InviteRedeemer onNavigate={navigateFromRail} /></div>
             {#if false}
             <nav class="channel-browser" aria-label="Server and channel browser">
@@ -1812,6 +1961,21 @@
             {/if}
             </div>
 
+            {#if favoriteRoomItems.length > 0}
+              <CoordinatorRoomCard
+                presentation="favorites"
+                pubkey="favorites"
+                label="Favorites"
+                status="online"
+                statusLabel="Favorites"
+                rooms={favoriteRoomItems}
+                favoriteRoomKeys={sidebarLedger.favorites}
+                activeRoomKey={activeSidebarRoomKey}
+                onOpen={openCoordinatorRoom}
+                onRemove={(target, origin) => requestSidebarRoomRemoval(target, origin)}
+                onFavorite={toggleFavoriteRoom}
+              />
+            {/if}
             <nav class="coordinator-card-list" aria-label="Server and channel browser">
               <CoordinatorRoomCard
                 pubkey={coordinatorPubkey}
@@ -1823,13 +1987,19 @@
                   ...hostedRooms.map((entry) => ({ room: entry.room, inviteUrl: entry.inviteUrl, removalMode: "delete" as const })),
                   ...homeJoinedRooms.map((storedRoom) => ({ room: storedRoom, inviteUrl: remoteRoomHref(storedRoom), removalMode: "leave" as const })),
                 ]}
+                favoriteRoomKeys={sidebarLedger.favorites}
                 unreadCount={coordinatorUnreadCount(coordinatorPubkey)}
                 activeRoomKey={activeSidebarRoomKey}
                 disabled={localRailUnavailable}
                 busy={localRailBusy}
+                revealRoomKey={favoriteRevealRoomKey}
+                onRevealHandled={(roomKey) => {
+                  if (favoriteRevealRoomKey === roomKey) favoriteRevealRoomKey = null;
+                }}
                 onCreate={() => void openCreateDialog()}
                 onOpen={openCoordinatorRoom}
                 onRemove={(target, origin) => requestSidebarRoomRemoval(target, origin)}
+                onFavorite={toggleFavoriteRoom}
               />
               {#each remoteServers as server (server.pubkey)}
                 <CoordinatorRoomCard
@@ -1838,10 +2008,16 @@
                   status={externalCoordinatorReachability(server.pubkey)}
                   statusLabel={reachabilityLabel(externalCoordinatorReachability(server.pubkey))}
                   rooms={server.rooms.map((storedRoom) => ({ room: storedRoom, inviteUrl: remoteRoomHref(storedRoom), removalMode: "leave" as const }))}
+                  favoriteRoomKeys={sidebarLedger.favorites}
                   unreadCount={coordinatorUnreadCount(server.pubkey)}
                   activeRoomKey={activeSidebarRoomKey}
+                  revealRoomKey={favoriteRevealRoomKey}
+                  onRevealHandled={(roomKey) => {
+                    if (favoriteRevealRoomKey === roomKey) favoriteRevealRoomKey = null;
+                  }}
                   onOpen={openCoordinatorRoom}
                   onRemove={(target, origin) => requestSidebarRoomRemoval(target, origin)}
+                  onFavorite={toggleFavoriteRoom}
                 />
               {/each}
             </nav>
@@ -1864,7 +2040,7 @@
       </aside>
       {/if}
 
-      <section class="host-chat min-h-0 min-w-0 overflow-hidden bg-[#101614]" data-testid="host-chat" data-revision={revision}>
+      <section bind:this={hostChatElement} tabindex="-1" class="host-chat min-h-0 min-w-0 overflow-hidden bg-[#101614]" data-testid="host-chat" data-revision={revision}>
         {#if locked && !embeddedChatActive}
           <PassphrasePrompt embedded {coordinator} />
         {:else if setupRequired}
@@ -1888,12 +2064,14 @@
               {identityReady}
               onContextChange={handleEmbeddedChatContext}
               onRoomStored={handleEmbeddedRoomStored}
+              {inviteCoordinatorReachability}
               onNavigate={navigateFromRail}
             />
           {/key}
         {:else if localRoomReady}
           {@const composerEnabled = true}
           <div class="room-pane flex h-full min-h-0 flex-col">{#if roomConnectionDetail}<p class="host-connection-banner">{roomConnectionDetail}</p>{/if}
+            <h1 class="sr-only" tabindex="-1" data-testid="active-conversation-heading">{room.title}</h1>
             <RoomActionsMenu
               roomTitle={room.title}
               roomId={room.id}
@@ -1931,6 +2109,7 @@
                     onActivateParticipantSurface={(key) => activeParticipantSurfaceKey = key}
                     onDismissParticipantSurface={(key) => { if (activeParticipantSurfaceKey === key) activeParticipantSurfaceKey = null; }}
                     onJoinInvite={(sharedInvite) => navigateFromRail(createSameShellAutoJoinHref(window.location.origin, sharedInvite))}
+                    {inviteCoordinatorReachability}
                     participantRooms={participantRoomChoices()}
                     onMention={mentionParticipant}
                     onInviteToRoom={inviteParticipantToRoom}
@@ -2287,6 +2466,7 @@
 </main>
 
 <style>
+  .operator-field { height: var(--app-visual-height, 100dvh); max-height: var(--app-visual-height, 100dvh); overscroll-behavior: contain; }
   .ignored-streak-disclosure { width: 100%; border: 1px solid #293832; background: #101614; padding: 8px 16px; color: #82958a; font-size: 14px; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }
   .ignored-streak-disclosure:hover, .ignored-streak-disclosure:focus-visible { border-color: #7cf59d; color: #dfffe7; outline: 2px solid #7cf59d; outline-offset: 2px; }
   .host-workspace { max-width: 100vw; overflow: hidden; background: rgb(7 12 9 / .8); }
@@ -2304,7 +2484,7 @@
   .command-cluster { display: flex; min-width: 0; align-items: stretch; gap: .08rem; }
   .command-cluster-label { display: none; align-items: center; padding: 0 .42rem; color: #617268; font-size: .46rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
   .command-cluster-divider { width: 1px; height: 1.55rem; align-self: center; margin: 0 .28rem; background: #2b3c31; }
-  .mobile-rail-toggle, .mobile-tools-toggle, .mobile-tools-scrim, .mobile-rail-scrim { display: none; }
+  .mobile-rail-toggle, .mobile-tools-toggle, .mobile-tools-scrim, .mobile-rail-scrim, .room-browser-mobile-heading { display: none; }
   .host-commandbar :global(.notification-feed), .host-commandbar :global(.notification-center), .host-commandbar :global(.user-profile) { border: 0; }
   .host-commandbar :global(.notification-feed-trigger), .host-commandbar :global(.notification-trigger), .host-commandbar :global(.user-trigger) { border: 0; background: transparent; }
   .host-commandbar :global(.notification-feed-trigger:hover), .host-commandbar :global(.notification-feed-trigger[aria-expanded="true"]), .host-commandbar :global(.notification-trigger:hover), .host-commandbar :global(.notification-trigger[aria-expanded="true"]), .host-commandbar :global(.user-trigger:hover), .host-commandbar :global(.user-trigger[aria-expanded="true"]) { background: #101713; }
@@ -2336,7 +2516,7 @@
   .host-input { width: 100%; border: 1px solid #34433b; background: #090d0b; padding: .7rem .8rem; color: #effff2; outline: none; }
   .host-input:focus { border-color: #7cf59d; box-shadow: 0 0 0 2px rgb(124 245 157 / .11); }
   .host-input:disabled { cursor: not-allowed; border-color: #26322c; color: #64766b; opacity: .72; }
-  .host-primary { border: 1px solid #7cf59d; background: #7cf59d; padding: .72rem 1rem; color: #08110b; font-weight: 650; }
+  .host-primary { min-width: 44px; min-height: 44px; border: 1px solid #7cf59d; background: #7cf59d; padding: .72rem 1rem; color: #08110b; font-weight: 650; }
   .host-primary:hover { border-color: #c5ffcf; background: #c5ffcf; }
   .host-primary:disabled { cursor: not-allowed; opacity: .45; }
   .admission-error { margin-top: .4rem; color: #ffaaa3; font-size: .72rem; line-height: 1.4; }
@@ -2528,7 +2708,7 @@
   .invite-dialog.qr-expanded .share-qr { width: auto; height: 100%; max-width: 100%; max-height: 100%; aspect-ratio: 1; box-sizing: border-box; }
   .invite-dialog.qr-expanded .share-qr img { width: 100%; height: 100%; }
   .invite-dialog.qr-expanded .invite-details, .invite-dialog.qr-expanded .invite-in-app { display: none; }
-  .emoji-button { flex: 0 0 auto; border: 1px solid #293832; background: #0b0e0d; padding: .2rem .4rem; font-size: .9rem; line-height: 1; }
+  .emoji-button { flex: 0 0 auto; min-width: 44px; min-height: 44px; border: 1px solid #293832; background: #0b0e0d; padding: .2rem .4rem; font-size: .9rem; line-height: 1; }
   .emoji-button:hover { border-color: #7cf59d; background: #112219; }
   .emoji-button:disabled { cursor: not-allowed; opacity: .28; }
   .host-connection-banner { flex: 0 0 auto; border-bottom: 1px solid #293832; background: #111814; padding: .65rem 1rem; color: #a9bbb0; font-size: .7rem; line-height: 1.5; }
@@ -2603,6 +2783,9 @@
     .host-commandbar { display: grid; width: 100%; grid-template-columns: minmax(3.25rem, 1fr) auto auto; align-items: stretch; justify-content: stretch; }
     .host-commandbar.guided-setup { position: absolute; top: 0; right: .45rem; width: auto; grid-template-columns: auto; justify-content: end; }
     .mobile-rail-toggle { display: grid; min-width: 0; height: 2.75rem; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .4rem; padding: 0 .55rem; color: #b9cbbf; text-align: left; font-size: .6rem; }
+    .room-browser-mobile-heading { position: sticky; z-index: 1; top: 0; display: flex; min-height: 2.75rem; align-items: center; justify-content: space-between; border-bottom: 1px solid #293832; background: #0d1310; padding: max(8px, env(safe-area-inset-top)) 8px 8px; }
+    .room-browser-mobile-heading h2 { color: #effff2; font-size: 18px; font-weight: 600; }
+    .room-browser-mobile-heading button { min-width: 2.75rem; min-height: 2.75rem; border: 1px solid #496451; padding: 8px; color: #bde7c7; font-size: 12px; }
     .mobile-rail-toggle:hover, .mobile-rail-toggle.active { background: #142018; color: #effff2; }
     .mobile-rail-toggle > span:first-child { color: #7cf59d; font-size: .78rem; }
     .mobile-rail-toggle > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2610,7 +2793,7 @@
     .mobile-tools-toggle { position: relative; z-index: 61; display: grid; width: 2.75rem; height: 2.75rem; place-items: center; color: #82958a; font-size: .7rem; letter-spacing: .08em; }
     .mobile-tools-toggle:hover, .mobile-tools-toggle.active { background: #142018; color: #effff2; }
     .mobile-tools-scrim { position: fixed; z-index: 59; inset: 0; display: block; border: 0; background: rgb(0 0 0 / .38); cursor: default; backdrop-filter: blur(1px); }
-    .host-utilities { position: absolute; z-index: 60; top: calc(100% + .35rem); right: 0; display: none; width: min(20rem, calc(100vw - 1.1rem)); max-height: calc(100dvh - 1.1rem); grid-template-columns: minmax(0, 1fr); overflow-y: auto; overscroll-behavior: contain; border: 1px solid #496451; background: #080d0a; box-shadow: 0 18px 48px rgb(0 0 0 / .62); }
+    .host-utilities { position: absolute; z-index: 60; top: calc(100% + .35rem); right: 0; display: none; width: min(20rem, calc(100vw - 1.1rem)); max-height: calc(var(--app-visual-height, 100dvh) - 1.1rem); grid-template-columns: minmax(0, 1fr); overflow-y: auto; overscroll-behavior: contain; border: 1px solid #496451; background: #080d0a; box-shadow: 0 18px 48px rgb(0 0 0 / .62); }
     .host-utilities.open { display: grid; }
     .host-utilities, .command-cluster { gap: 0; }
     .command-cluster { display: grid; width: 100%; grid-template-columns: minmax(0, 1fr); }
@@ -2629,7 +2812,7 @@
       bottom: .55rem;
       left: .55rem;
       width: auto;
-      max-height: calc(100dvh - 1.1rem);
+      max-height: calc(var(--app-visual-height, 100dvh) - 1.1rem);
       overflow-y: auto;
       overscroll-behavior: contain;
     }
@@ -2643,7 +2826,7 @@
       bottom: .55rem;
       left: .55rem;
       width: auto;
-      max-height: calc(100dvh - 1.1rem);
+      max-height: calc(var(--app-visual-height, 100dvh) - 1.1rem);
       overflow-y: auto;
       overscroll-behavior: contain;
     }
@@ -2662,7 +2845,7 @@
     .management-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .management-summary > div { padding: .65rem; }
     .share-overlay { padding: .55rem; }
-    .share-dialog { display: grid; max-height: calc(100dvh - 1.1rem); grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+    .share-dialog { display: grid; max-height: calc(var(--app-visual-height, 100dvh) - 1.1rem); grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
     .share-dialog-header { padding: .7rem .75rem; }
     .share-dialog-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
     .share-dialog-content { padding: .75rem; }
@@ -2670,7 +2853,7 @@
     .invite-dialog-header { padding-inline: .85rem; }
     .invite-in-app { margin-inline: .85rem; }
     .share-qr { width: min(100%, 15rem, 42dvh); border-width: .4rem; }
-    .invite-dialog.qr-expanded { width: calc(100vw - 1.1rem); height: calc(100dvh - 1.1rem); }
+    .invite-dialog.qr-expanded { width: calc(100vw - 1.1rem); height: calc(var(--app-visual-height, 100dvh) - 1.1rem); }
     .host-composer-status:not(.unavailable) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
   }
 

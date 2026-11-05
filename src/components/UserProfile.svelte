@@ -80,7 +80,7 @@
 
   async function rotateIdentity(): Promise<void> {
     await userProfileStore.rotateAnonymousIdentity();
-    completionAnnouncement = "Identity rotated. Local room access was removed.";
+    completionAnnouncement = "Identity rotated. Previous channels were moved to History.";
     rotationDialog = null;
     closeMenu();
   }

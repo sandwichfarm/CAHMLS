@@ -1,4 +1,4 @@
-import type { StoredRoom } from "./room-store";
+import { roomIdentityKey, type StoredRoom } from "./room-store";
 
 export const SIDEBAR_LEDGER_KEY = "cordn:v1:sidebar-ledger";
 
@@ -19,6 +19,7 @@ export interface SidebarLedger {
   coordinatorOrder: string[];
   roomOrder: Record<string, string[]>;
   history: SidebarHistoryEntry[];
+  favorites: string[];
 }
 
 export interface SidebarProjection {
@@ -28,7 +29,7 @@ export interface SidebarProjection {
 }
 
 export function emptySidebarLedger(): SidebarLedger {
-  return { version: 1, coordinatorOrder: [], roomOrder: {}, history: [] };
+  return { version: 1, coordinatorOrder: [], roomOrder: {}, history: [], favorites: [] };
 }
 
 export function parseSidebarLedger(raw: string | null): SidebarLedger {
@@ -48,7 +49,10 @@ export function parseSidebarLedger(raw: string | null): SidebarLedger {
     const history = Array.isArray(value.history)
       ? value.history.filter(isSidebarHistoryEntry).sort((left, right) => right.archivedAt - left.archivedAt)
       : [];
-    return { version: 1, coordinatorOrder, roomOrder, history };
+    const favorites = Array.isArray(value.favorites)
+      ? uniqueStrings(value.favorites).filter(isCompositeRoomKey)
+      : [];
+    return { version: 1, coordinatorOrder, roomOrder, history, favorites };
   } catch {
     return emptySidebarLedger();
   }
@@ -87,9 +91,29 @@ export function reconcileSidebarLedger(
     next.roomOrder[pubkey] = order.filter((key) => activeKeys.has(key));
   }
   next.coordinatorOrder = next.coordinatorOrder.filter((pubkey) => activeRooms.some((room) => room.coordinatorPubkey === pubkey));
+  next.favorites = next.favorites.filter((key) => activeKeys.has(key));
 
   const ordered = orderActiveRooms(activeRooms, next, currentCoordinatorPubkey);
   return { ledger: next, activeRooms: ordered, history: next.history };
+}
+
+export function isSidebarFavorite(
+  ledger: SidebarLedger,
+  room: Pick<StoredRoom, "id" | "coordinatorPubkey">,
+): boolean {
+  return ledger.favorites.includes(roomIdentityKey(room.coordinatorPubkey, room.id));
+}
+
+export function toggleSidebarFavorite(
+  ledger: SidebarLedger,
+  room: Pick<StoredRoom, "id" | "coordinatorPubkey">,
+): SidebarLedger {
+  const next = cloneLedger(ledger);
+  const key = roomIdentityKey(room.coordinatorPubkey, room.id);
+  next.favorites = next.favorites.includes(key)
+    ? next.favorites.filter((candidate) => candidate !== key)
+    : [...next.favorites, key];
+  return next;
 }
 
 export function archiveSidebarRoom(
@@ -180,6 +204,7 @@ function cloneLedger(ledger: SidebarLedger): SidebarLedger {
     coordinatorOrder: [...ledger.coordinatorOrder],
     roomOrder: Object.fromEntries(Object.entries(ledger.roomOrder).map(([pubkey, keys]) => [pubkey, [...keys]])),
     history: ledger.history.map((entry) => ({ ...entry })),
+    favorites: [...ledger.favorites],
   };
 }
 
@@ -200,6 +225,10 @@ function isSidebarHistoryEntry(value: unknown): value is SidebarHistoryEntry {
     && Number.isFinite(entry.archivedAt);
 }
 
-function roomIdentityKey(coordinatorPubkey: string, id: string): string {
-  return `${coordinatorPubkey}\u0000${id}`;
+function isCompositeRoomKey(value: string): boolean {
+  const separator = value.indexOf("\u0000");
+  const coordinatorPubkey = value.slice(0, separator);
+  return /^[0-9a-f]{64}$/i.test(coordinatorPubkey)
+    && separator < value.length - 1
+    && value.indexOf("\u0000", separator + 1) === -1;
 }
