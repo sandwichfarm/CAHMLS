@@ -15,10 +15,6 @@ export function validateRelayUrl(value: string): string | null {
     return "Relay URL must start with ws:// or wss://";
   }
 
-  if (!parsed.hostname) {
-    return "Relay URL needs a hostname";
-  }
-
   return null;
 }
 
@@ -52,6 +48,6 @@ export function validateMaxUsers(value: number): string | null {
 /** Trim a coordinator display name to at most 48 code points. Empty or non-string input is rejected. */
 export function normalizeCoordinatorName(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const normalized = Array.from(value.trim()).slice(0, 48).join("");
+  const normalized = Array.from(value.trim()).slice(0, 48).join("").trimEnd();
   return normalized || null;
 }

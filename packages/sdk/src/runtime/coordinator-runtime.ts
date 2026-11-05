@@ -160,10 +160,7 @@ export const defaultCoordinatorRuntimeDeps: CoordinatorRuntimeDeps = {
             attemptController.abort();
             reject(new Error("Hosted room recovery timed out"));
           }, timeoutMs);
-          rejectOnAbort = () => {
-            if (timer !== null) clearTimeout(timer);
-            reject(abortError());
-          };
+          rejectOnAbort = () => reject(abortError());
           signal.addEventListener("abort", rejectOnAbort, { once: true });
         }),
       ]);
@@ -311,6 +308,7 @@ export class CoordinatorRuntime {
   private startupPromise: Promise<void> | null = null;
   private stopPromise: Promise<void> | null = null;
   private profilePublicationPromise: Promise<CoordinatorProfilePublicationResult> | null = null;
+  private profilePublicationRequest: string | null = null;
   private readonly config: CoordinatorRuntimeConfig;
   private readonly deps: CoordinatorRuntimeDeps;
   private readonly keyStorage: KeyStorage;
@@ -343,6 +341,8 @@ export class CoordinatorRuntime {
   }
 
   private update(patch: Partial<CoordinatorRuntimeState>): void {
+    const keys = Object.keys(patch) as Array<keyof CoordinatorRuntimeState>;
+    if (keys.every((key) => Object.is(this.state[key], patch[key]))) return;
     this.state = { ...this.state, ...patch };
     for (const listener of this.listeners) listener();
   }
@@ -429,7 +429,15 @@ export class CoordinatorRuntime {
       return false;
     }
 
-    await this.keyStorage.save(this.requireKeyManager().getSecretKeyBytes(), passphrase);
+    const secretKey = this.requireKeyManager().getSecretKeyBytes();
+    try {
+      await this.keyStorage.save(secretKey, passphrase);
+    } catch {
+      this.update({ persistenceError: "Could not save persisted key" });
+      return false;
+    } finally {
+      secretKey.fill(0);
+    }
     this.update({ persistenceEnabled: true });
     this.addDebugLog("info", "encrypted persistence enabled");
     return true;
@@ -437,9 +445,10 @@ export class CoordinatorRuntime {
 
   async disablePersistence(): Promise<void> {
     this.keyStorage.clear();
-    await clearPersistedCoordinatorState();
+    // The key is gone from here on, even if clearing the room state fails.
     this.update({ persistenceEnabled: false });
     this.update({ persistenceError: null });
+    await clearPersistedCoordinatorState();
     this.addDebugLog("info", "encrypted persistence disabled");
   }
 
@@ -506,9 +515,18 @@ export class CoordinatorRuntime {
   }
 
   private publishPersistedCoordinatorProfile(): Promise<CoordinatorProfilePublicationResult> {
-    if (this.profilePublicationPromise) return this.profilePublicationPromise;
-
     const keyManager = this.requireKeyManager();
+    const request = JSON.stringify([
+      keyManager.identity.publicKeyHex,
+      this.config.coordinatorName,
+      this.config.inviteRelayUrls,
+    ]);
+    if (this.profilePublicationPromise) {
+      if (this.profilePublicationRequest === request) return this.profilePublicationPromise;
+      // Changed while publishing: the in-flight result does not cover it, so publish again afterwards.
+      return this.profilePublicationPromise.then(() => this.publishPersistedCoordinatorProfile());
+    }
+
     this.update({ profilePublicationState: "publishing" });
     const transaction = Promise.resolve()
       .then(() => this.deps.profilePublisher({
@@ -518,18 +536,21 @@ export class CoordinatorRuntime {
         relayUrls: this.config.inviteRelayUrls,
       }))
       .then(() => {
-        this.update({ profilePublicationState: "published" });
+        if (this.profilePublicationPromise === transaction) this.update({ profilePublicationState: "published" });
         return { localSaved: true, published: true };
       })
       .catch(() => {
-        this.update({ profilePublicationState: "failed" });
-        this.addDebugLog("warn", "coordinator profile publication failed");
+        if (this.profilePublicationPromise === transaction) {
+          this.update({ profilePublicationState: "failed" });
+          this.addDebugLog("warn", "coordinator profile publication failed");
+        }
         return { localSaved: true, published: false };
       })
       .finally(() => {
         if (this.profilePublicationPromise === transaction) this.profilePublicationPromise = null;
       });
     this.profilePublicationPromise = transaction;
+    this.profilePublicationRequest = request;
     return transaction;
   }
 
@@ -538,6 +559,8 @@ export class CoordinatorRuntime {
     if (!this.config.isSetupComplete) {
       throw new Error("Complete coordinator setup before starting.");
     }
+    // Refuse before taking ownership: a rejected start must not disturb the current generation.
+    transitionCoordinator(this.status, "start");
     const generation = ++this.startupGeneration;
     const controller = new AbortController();
     this.startupController = controller;
@@ -645,21 +668,31 @@ export class CoordinatorRuntime {
       this.deps.startResourceMonitor(this.running);
       this.addDebugLog("info", "coordinator started", keyManager.identity.npub);
     } catch (error) {
-      if (!this.ownsGeneration(generation, signal)) return;
-      if (this.running) this.deps.closeTransport(this.running);
-      this.running = null;
-      await this.releaseInstanceLease();
-      this.deps.stopResourceMonitor();
-      const message = error instanceof Error ? error.message : "Coordinator startup failed";
-      this.update({ error: message });
-      this.setStartupProgress("failed", message);
-      if (message === INSTANCE_RUNNING_MESSAGE) {
-        this.addDebugLog("warn", INSTANCE_RUNNING_MESSAGE);
-      } else {
-        this.addDebugLog("error", "coordinator startup failed", message);
-      }
-      this.setEnabledRelayStatuses("error");
-      this.update({ status: transitionCoordinator(this.status, "error") });
+      await this.failStartup(generation, signal, error);
+    }
+  }
+
+  private async failStartup(generation: number, signal: AbortSignal, error: unknown): Promise<void> {
+    if (!this.ownsGeneration(generation, signal)) return;
+    await this.releaseResources();
+    const message = error instanceof Error ? error.message : "Coordinator startup failed";
+    this.update({ error: message });
+    this.setStartupProgress("failed", message);
+    if (message === INSTANCE_RUNNING_MESSAGE) {
+      this.addDebugLog("warn", INSTANCE_RUNNING_MESSAGE);
+    } else {
+      this.addDebugLog("error", "coordinator startup failed", message);
+    }
+    this.setEnabledRelayStatuses("error");
+    this.update({ status: transitionCoordinator(this.status, "error") });
+  }
+
+  /** Release resources without letting a failing cleanup step wedge the lifecycle. */
+  private async releaseResources(): Promise<void> {
+    try {
+      await this.stopSync();
+    } catch (error) {
+      this.addDebugLog("warn", "coordinator cleanup failed", error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -668,7 +701,7 @@ export class CoordinatorRuntime {
     if (this.stopPromise) return this.stopPromise;
     if (this.status === "idle" && !this.startupPromise) return Promise.resolve();
     const transaction = this.stopOnce().finally(() => {
-      if (this.stopPromise === transaction) this.stopPromise = null;
+      this.stopPromise = null;
     });
     this.stopPromise = transaction;
     return transaction;
@@ -680,12 +713,13 @@ export class CoordinatorRuntime {
     this.startupController?.abort();
     this.startupController = null;
     const activeStartup = this.startupPromise;
-    if (activeStartup) await activeStartup;
-    if (this.startupPromise === activeStartup) this.startupPromise = null;
+    // A startup rejection belongs to the start() caller; it must not abort this shutdown.
+    if (activeStartup) await activeStartup.catch(() => undefined);
+    this.startupPromise = null;
     // A startup that failed on its own has already returned to idle.
     if (this.status === "idle") return;
     this.update({ status: transitionCoordinator(this.status, "stop") });
-    await this.stopSync();
+    await this.releaseResources();
     this.recoveryTargets = [];
     this.recoveryCompleted.clear();
     this.update({ relayStatuses: {} });
@@ -740,9 +774,13 @@ export class CoordinatorRuntime {
 
   async stopSync(): Promise<void> {
     this.deps.stopResourceMonitor();
-    if (this.running) this.deps.closeTransport(this.running);
+    const running = this.running;
     this.running = null;
-    await this.releaseInstanceLease();
+    try {
+      if (running) this.deps.closeTransport(running);
+    } finally {
+      await this.releaseInstanceLease();
+    }
   }
 
   private async recoverHostedRooms(generation: number, signal: AbortSignal): Promise<boolean> {
@@ -777,7 +815,6 @@ export class CoordinatorRuntime {
 
     for (const target of this.recoveryTargets) {
       if (this.recoveryCompleted.has(target.roomIdentityKey)) continue;
-      let succeeded = false;
       for (let attempt = 1; attempt <= ROOM_RECOVERY_POLICY.maxAttempts; attempt += 1) {
         if (!this.ownsGeneration(generation, signal)) return false;
         this.setRoomRecoveryProgress(attempt === 1 ? "restoring" : "retrying", this.recoveryCompleted.size, total, target.roomName, attempt);
@@ -793,7 +830,6 @@ export class CoordinatorRuntime {
           }
           this.recoveryCompleted.add(target.roomIdentityKey);
           this.setRoomRecoveryProgress("restoring", this.recoveryCompleted.size, total, target.roomName, attempt);
-          succeeded = true;
           break;
         } catch (error) {
           const details = error instanceof Error ? error.message : String(error);
@@ -814,7 +850,6 @@ export class CoordinatorRuntime {
           await this.deps.wait(ROOM_RECOVERY_POLICY.retryDelayMs[attempt - 1]!, signal);
         }
       }
-      if (!succeeded) return false;
     }
 
     this.setRoomRecoveryProgress("complete", this.recoveryCompleted.size, total, null, 0);
@@ -832,7 +867,7 @@ export class CoordinatorRuntime {
     const roomRecovery = createHostedRoomRecoveryProgress({ state, completed, total, roomName, attempt, diagnostic });
     this.update({ startupProgress: startupProgress(
       state === "complete" && total > 0 ? "online" : "restoring-rooms",
-      state === "complete" ? undefined : roomRecovery.diagnostic || `Restoring # ${roomName ?? "room"}`,
+      state === "complete" ? undefined : roomRecovery.diagnostic || `Restoring # ${roomName}`,
       roomRecovery,
     ) });
   }
@@ -847,12 +882,14 @@ export class CoordinatorRuntime {
     const generation = ++this.startupGeneration;
     const controller = new AbortController();
     this.startupController = controller;
+    this.registerPagehideRelease(generation);
     const transaction = this.recoverHostedRooms(generation, controller.signal).then((recovered) => {
       if (!recovered || !this.ownsGeneration(generation, controller.signal)) return;
       this.update({ status: transitionCoordinator(this.status, "started") });
       this.update({ appliedConfigRevision: this.config.runtimeRevision });
       this.deps.startResourceMonitor(this.running!);
-    });
+      this.addDebugLog("info", "coordinator started", this.identity.npub);
+    }).catch((error: unknown) => this.failStartup(generation, controller.signal, error));
     this.startupPromise = transaction.finally(() => {
       if (this.startupGeneration === generation) this.startupPromise = null;
     });
@@ -872,7 +909,6 @@ export class CoordinatorRuntime {
       (candidate) => candidate.roomIdentityKey !== failedTarget.roomIdentityKey,
     );
     this.recoveryCompleted.delete(failedTarget.roomIdentityKey);
-    this.update({});
     this.addDebugLog("warn", "removed unrecoverable hosted room from startup", failedTarget.roomName);
     await this.retryRoomRecovery();
   }
@@ -900,6 +936,9 @@ export class CoordinatorRuntime {
 
   private destroyStateSynchronously(): void {
     this.deps.stopResourceMonitor();
+    this.profilePublicationPromise = null;
+    this.profilePublicationRequest = null;
+    this.update({ profilePublicationState: "idle" });
     this.keyManager?.destroy();
     this.keyStorage.clear();
     this.update({ keyManager: KeyManager.generate() });
@@ -918,7 +957,7 @@ export class CoordinatorRuntime {
   }
 
   clearDebugLog(): void {
-    this.update({ debugLog: [] });
+    if (this.debugLog.length > 0) this.update({ debugLog: [] });
   }
 
   private setEnabledRelayStatuses(status: RelayConnectionStatus): void {
@@ -967,7 +1006,9 @@ export class CoordinatorRuntime {
       if (this.startupGeneration !== generation) return;
       this.startupController?.abort();
       this.addDebugLog("info", "page unloading; releasing coordinator instance lease");
-      void this.releaseInstanceLease();
+      void this.releaseInstanceLease().catch((error: unknown) => {
+        this.addDebugLog("warn", "coordinator cleanup failed", error instanceof Error ? error.message : String(error));
+      });
     };
 
     const target = globalThis as unknown as Partial<EventTarget>;

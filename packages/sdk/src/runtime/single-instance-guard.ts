@@ -146,9 +146,10 @@ export class SimplePoolNostrInstanceNetwork implements NostrInstanceNetwork {
 
     const pool = new SimplePool({ enablePing: false, enableReconnect: false });
     const publish = async (status: "running" | "stopped"): Promise<void> => {
-      const secretKey = input.getSecretKeyBytes();
+      let secretKey: Uint8Array | null = null;
       let event: NostrEvent;
       try {
+        secretKey = input.getSecretKeyBytes();
         // Kind 30382 is parameterized-replaceable. Guarantee that a stop sent
         // in the same wall-clock second as the last running heartbeat wins the
         // relay's replacement ordering instead of leaving a false online state.
@@ -176,7 +177,7 @@ export class SimplePoolNostrInstanceNetwork implements NostrInstanceNetwork {
         if (status === "stopped") pool.destroy();
         return;
       } finally {
-        secretKey.fill(0);
+        secretKey?.fill(0);
       }
 
       try {
@@ -193,10 +194,12 @@ export class SimplePoolNostrInstanceNetwork implements NostrInstanceNetwork {
     void publish("running");
     const timer = setInterval(() => void publish("running"), HEARTBEAT_RENEW_MS);
 
+    let stopped: Promise<void> | null = null;
     return {
-      release: async () => {
+      release: () => {
         clearInterval(timer);
-        await publish("stopped");
+        stopped ??= publish("stopped");
+        return stopped;
       },
     };
   }
@@ -238,12 +241,12 @@ export class SingleInstanceGuard {
       return;
     }
 
-    let releaseLock: () => void = () => undefined;
+    let releaseLock!: () => void;
     const holdLock = new Promise<void>((resolve) => {
       releaseLock = resolve;
     });
-    let requestComplete: Promise<void> = Promise.resolve();
-    const granted = new Promise<boolean>((resolve) => {
+    let requestComplete!: Promise<void>;
+    const granted = new Promise<boolean | Error>((resolve) => {
       requestComplete = locks.request(`cordn:${publicKeyHex}`, { ifAvailable: true, mode: "exclusive" }, async (lock) => {
         resolve(Boolean(lock));
         if (!lock) {
@@ -252,9 +255,17 @@ export class SingleInstanceGuard {
 
         await holdLock;
       });
+      // The request rejects without calling back in opaque origins such as sandboxed iframes.
+      requestComplete.catch((error: unknown) => resolve(new Error(errorMessage(error))));
     });
 
-    if (!(await granted)) {
+    const outcome = await granted;
+    if (outcome instanceof Error) {
+      debug?.("info", "web lock unavailable", outcome.message);
+      return;
+    }
+
+    if (!outcome) {
       debug?.("warn", "web lock detected running instance", shortKey(publicKeyHex));
       throw new CordnAlreadyRunningError();
     }
@@ -335,12 +346,22 @@ export class SingleInstanceGuard {
       throw new CordnAlreadyRunningError();
     }
 
-    const timer = this.getSetInterval()(writeLease, this.deps.leaseRenewMs ?? DEFAULT_LEASE_RENEW_MS);
+    const renewLease = (): void => {
+      try {
+        writeLease();
+      } catch (error) {
+        debug?.("warn", "storage lease renewal failed", errorMessage(error));
+      }
+    };
+    const timer = this.getSetInterval()(renewLease, this.deps.leaseRenewMs ?? DEFAULT_LEASE_RENEW_MS);
     const release = (): void => {
       this.getClearInterval()(timer);
-      rememberStoppedInstanceToken(storage, stoppedTokenStorageKey(publicKeyHex), this.token, this.now());
-      if (readLease(storage, key)?.token === this.token) {
-        storage.removeItem(key);
+      try {
+        rememberStoppedInstanceToken(storage, stoppedTokenStorageKey(publicKeyHex), this.token, this.now());
+      } finally {
+        if (readLease(storage, key)?.token === this.token) {
+          storage.removeItem(key);
+        }
       }
     };
     this.releases.push(release);
@@ -392,7 +413,8 @@ export class SingleInstanceGuard {
   }
 
   async release(): Promise<void> {
-    const pending = this.releases.splice(0).reverse().map((release) => Promise.resolve(release()));
+    // An async wrapper turns a synchronous throw into a rejection so later steps still run.
+    const pending = this.releases.splice(0).reverse().map(async (release) => release());
     await Promise.allSettled(pending);
   }
 
@@ -413,7 +435,7 @@ export class SingleInstanceGuard {
       return this.deps.locks;
     }
 
-    return (globalThis.navigator as Navigator & { locks?: BrowserLockManager }).locks ?? null;
+    return (globalThis.navigator as (Navigator & { locks?: BrowserLockManager }) | undefined)?.locks ?? null;
   }
 
   private createBroadcastChannel(): BroadcastChannelLike | null {
