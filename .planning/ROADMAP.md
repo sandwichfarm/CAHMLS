@@ -212,6 +212,25 @@ Plans:
 
 **UI hint**: no
 
+### Phase 24: SDK Extraction
+
+**Goal**: Developers can host and connect to Cordn coordinators through a documented, tested `@cahmls/sdk` package, and the web application is one consumer of it with no regressions.
+**Depends on**: Phase 23
+**Requirements**: SDK-01, SDK-02, SDK-03, SDK-04, SDK-05, SDK-06, SDK-07
+**Success Criteria** (what must be TRUE):
+
+  1. `packages/sdk` imports no UI framework and nothing from `src/`, and its built entry points load through the `exports` map on plain Node.js.
+  2. A framework-free `CoordinatorRuntime` drives the lifecycle, and `CoordinatorStore` only mirrors its state into Svelte.
+  3. CI enforces SDK coverage thresholds, verifies the package, and builds the VitePress documentation.
+  4. Unit, browser, build, and upstream interoperability checks show no regression from `master`.
+  5. Each defect found during extraction has a regression test.
+
+**Plans**: 1 plan
+
+- [ ] 24-01-PLAN.md — Extract the package, add the runtime, fix defects, cover the SDK, and document it.
+
+**UI hint**: no
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -225,3 +244,4 @@ Plans:
 | 21. First-Run Coordinator Identity & Profile | 0/TBD | Not started | - |
 | 22. Coordinator-Grouped Sidebar | 2/2 | Complete | 2026-08-06 |
 | 23. Bounded Gift-Wrap Delivery | 2/2 | Complete | 2026-08-06 |
+| 24. SDK Extraction | 0/1 | In Progress |  |

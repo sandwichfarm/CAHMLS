@@ -16,7 +16,7 @@
     "test:e2e": "playwright test",
     "check:upstream": "scripts/check-cordn-upstream-parity.sh",
     "test:upstream-interop": "scripts/check-cordn-upstream-interop.sh",
-    "ci": "pnpm lint && pnpm test && pnpm build && pnpm test:e2e",
+    "ci": "pnpm lint && pnpm test && pnpm --filter @cahmls/sdk typecheck && pnpm sdk:coverage && pnpm sdk:verify-package && pnpm docs:build && pnpm build && pnpm test:e2e",
     "sdk:build": "pnpm --filter @cahmls/sdk build",
     "sdk:coverage": "pnpm --filter @cahmls/sdk test:coverage",
     "sdk:verify-package": "pnpm --filter @cahmls/sdk build && pnpm --filter @cahmls/sdk test:package",

@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     # The full Chromium suite currently takes about five minutes by itself.
     # Leave enough headroom for dependency/browser installation and slower runners.
-    timeout-minutes: 12
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -41,6 +41,18 @@ jobs:
 
       - name: Unit tests
         run: pnpm test
+
+      - name: Type-check SDK and its tests
+        run: pnpm --filter @cahmls/sdk typecheck
+
+      - name: SDK coverage thresholds
+        run: pnpm sdk:coverage
+
+      - name: Verify SDK package
+        run: pnpm sdk:verify-package
+
+      - name: Build documentation
+        run: pnpm docs:build
 
       - name: Build
         run: pnpm build

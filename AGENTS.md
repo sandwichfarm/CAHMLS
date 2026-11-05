@@ -8,6 +8,7 @@ This repository uses Get Shit Done (GSD) as the default software delivery lifecy
 - Prefer the codebase-memory MCP graph for code discovery: `search_graph`, `trace_path`, `get_code_snippet`, `query_graph`, then `get_architecture`. Use `rg` for literal strings, non-code files, or gaps in the graph.
 - Preserve unrelated working-tree changes. Multiple agents may share this checkout; never revert or overwrite work you do not own.
 - Use Svelte 5 runes, strict TypeScript, browser-safe APIs, and the project's existing component/state patterns. Do not introduce Node-only runtime dependencies.
+- Keep `packages/sdk` free of UI framework imports and of imports from `src/`. Application services reach it through injection (`configureRoomEnvironment`, `CoordinatorRuntime` options).
 - Keep private keys, invite secrets, and decrypted message material out of logs, errors, snapshots, fixtures, and commits.
 - Use `apply_patch` for intentional file edits and focused commands for generated formatting or test output.
 - Follow [`GIT-PROCEDURES.md`](GIT-PROCEDURES.md) for branch creation, commit cadence, remote synchronization, upstream escalation, issue publication, pushing, and pull requests. A completed task is not delivered while its commits exist only in the local checkout unless the user explicitly requested local-only work.
@@ -55,7 +56,11 @@ Run the narrowest relevant checks while iterating, then the complete gate before
 ```bash
 pnpm lint
 pnpm exec tsc --noEmit
+pnpm --filter @cahmls/sdk typecheck
 pnpm test
+pnpm sdk:coverage
+pnpm sdk:verify-package
+pnpm docs:build
 pnpm test:e2e
 pnpm build
 git diff --check
@@ -65,7 +70,7 @@ When a command cannot run because an external service, credential, or browser ca
 
 ## Cordn Interoperability Guardrails
 
-For changes to `src/cordn/`, the coordinator methods/contracts, or chat admission and wire-protocol paths:
+For changes to `packages/sdk/src/` coordinator, server, contract, or client modules, or chat admission and wire-protocol paths:
 
 - Run `pnpm check:upstream` to detect live Cordn method and schema drift.
 - Run `pnpm test:upstream-interop` to execute the pinned upstream `CliSession` against CAHMLS's real ContextVM/Nostr transport. The gate must prove join-request admission, a CAHMLS-to-Cordn direct invitation, a Cordn-to-CAHMLS direct invitation, and encrypted messages in both directions for every membership path.
