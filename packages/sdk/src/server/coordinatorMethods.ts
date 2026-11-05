@@ -328,37 +328,35 @@ export class CoordinatorAdapter {
       const existingLastResortRecords = records.filter(
         (record) => record.isLastResort,
       );
-
-      if (
-        maxLastResortPerIdentity > 0 &&
-        existingLastResortRecords.length >= maxLastResortPerIdentity
-      ) {
-        const recordsToRemove = existingLastResortRecords.slice(
-          0,
-          existingLastResortRecords.length - maxLastResortPerIdentity + 1,
-        );
-        for (const record of recordsToRemove) {
-          this.coordinator.removeKeyPackage(record.keyPackageRef);
-        }
-      }
-
+      const retainedLastResortCount =
+        maxLastResortPerIdentity > 0
+          ? Math.min(
+              existingLastResortRecords.length,
+              maxLastResortPerIdentity - 1,
+            )
+          : existingLastResortRecords.length;
       const nonLastResortCount =
         records.length - existingLastResortRecords.length;
+
+      // Decide before removing anything: a rejected publication must leave the
+      // identity's current last-resort key package available.
       if (
         maxPerIdentity > 0 &&
-        nonLastResortCount +
-          Math.min(
-            existingLastResortRecords.length,
-            maxLastResortPerIdentity - 1,
-          ) +
-          1 >
-          maxPerIdentity
+        nonLastResortCount + retainedLastResortCount + 1 > maxPerIdentity
       ) {
         this.logQuotaRejection(
           stablePubkey,
           "max key packages per identity exceeded",
         );
         throw new Error("Key package quota exceeded");
+      }
+
+      const recordsToRemove = existingLastResortRecords.slice(
+        0,
+        existingLastResortRecords.length - retainedLastResortCount,
+      );
+      for (const record of recordsToRemove) {
+        this.coordinator.removeKeyPackage(record.keyPackageRef);
       }
 
       return;
@@ -721,11 +719,17 @@ export class CoordinatorAdapter {
       afterCursor: input.after,
       sinceEpoch,
     });
-    const backlog = this.coordinator.fetchGroupMessages({
-      groupId,
-      afterCursor: input.after,
-      sinceEpoch,
-    });
+    let backlog: GroupMessageRecord[];
+    try {
+      backlog = this.coordinator.fetchGroupMessages({
+        groupId,
+        afterCursor: input.after,
+        sinceEpoch,
+      });
+    } catch (error) {
+      subscription.unsubscribe();
+      throw error;
+    }
     let lastEmittedCursor = input.after ?? 0;
     const originalAbort = stream.abort.bind(stream);
     const clientPubkeyLabel =
@@ -733,7 +737,6 @@ export class CoordinatorAdapter {
         ? `${clientPubkey.slice(0, 12)}…`
         : undefined;
     let cleanedUp = false;
-    let endLogged = false;
 
     this.logger.info(
       {
@@ -755,11 +758,6 @@ export class CoordinatorAdapter {
       subscription.unsubscribe();
       this.recordSubscriptionCount();
 
-      if (endLogged) {
-        return;
-      }
-
-      endLogged = true;
       this.logger.info(
         {
           type: "subscription_end",
@@ -777,8 +775,20 @@ export class CoordinatorAdapter {
       await originalAbort(reason);
     };
 
+    // Transport teardown disposes the writer without calling abort(), and a
+    // client can cancel before this handler runs. Either would otherwise leave
+    // the loop below waiting on a queue nothing will ever close.
+    const releaseInactiveStream = (): void =>
+      cleanupSubscription("stream inactive");
+    stream.signal?.addEventListener("abort", releaseInactiveStream, {
+      once: true,
+    });
+
     try {
       await stream.start();
+      if (!stream.isActive) {
+        releaseInactiveStream();
+      }
 
       for (const record of backlog) {
         const message = mapGroupMessage(record);
@@ -796,6 +806,7 @@ export class CoordinatorAdapter {
         lastEmittedCursor = record.cursor;
       }
 
+      stream.signal?.removeEventListener("abort", releaseInactiveStream);
       if (stream.isActive) {
         await stream.close();
       }
@@ -887,8 +898,18 @@ export class CoordinatorAdapter {
       await originalAbort(reason);
     };
 
+    // See subscribeGroupMessages: not every way a writer ends calls abort().
+    const releaseInactiveStream = (): void =>
+      cleanupSubscriptions("stream inactive");
+    stream.signal?.addEventListener("abort", releaseInactiveStream, {
+      once: true,
+    });
+
     try {
       await stream.start();
+      if (!stream.isActive) {
+        releaseInactiveStream();
+      }
 
       for await (const record of subscription.messages) {
         if (!stream.isActive) {
@@ -898,6 +919,7 @@ export class CoordinatorAdapter {
         await writeGroupMessage(stream, record);
       }
 
+      stream.signal?.removeEventListener("abort", releaseInactiveStream);
       if (stream.isActive) {
         await stream.close();
       }

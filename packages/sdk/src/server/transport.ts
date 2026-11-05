@@ -105,9 +105,6 @@ export class TransportFactory {
     diagnostics?: TransportDiagnostics,
   ): Promise<RunningTransport> {
     const websocketPool = withRequiredLocalRelay(relayUrls);
-    if (websocketPool.length === 0) {
-      throw new Error("At least one enabled relay is required");
-    }
 
     const signer = new BrowserNostrSigner(privateKey);
     const coordinatorPubkey = await signer.getPublicKey();
@@ -118,11 +115,11 @@ export class TransportFactory {
     });
     diagnostics?.onStartupPhase?.({ phase: "opening-storage" });
     const storage = await (this.deps.createStorage ?? createBrowserCoordinatorStorage)(persistent, coordinatorPubkey);
-    diagnostics?.onStartupPhase?.({ phase: "preparing-runtime" });
     let coordinator: Coordinator | undefined;
     let transport: NostrServerTransport | undefined;
     let adapter: CoordinatorAdapter | undefined;
     try {
+      diagnostics?.onStartupPhase?.({ phase: "preparing-runtime" });
       coordinator = createCoordinator({
         storage,
       });
@@ -179,7 +176,13 @@ export class TransportFactory {
         }
       };
       transport.onerror = (error) => diagnostics?.onOutboundError?.(error);
-      transport.onclose = () => diagnostics?.onClosed?.();
+      // McpServer.close() also closes its transport, so close can run twice.
+      let closeReported = false;
+      transport.onclose = () => {
+        if (closeReported) return;
+        closeReported = true;
+        diagnostics?.onClosed?.();
+      };
       const resolveRequestEvent: ResolveRequestEvent = (requestEventId) =>
         transport?.getNostrRequestEvent(requestEventId) ?? null;
       adapter = new CoordinatorAdapter(
@@ -198,8 +201,7 @@ export class TransportFactory {
       });
     } catch (error) {
       // Coordinator.close() also closes storage; without one, close storage directly.
-      if (coordinator) coordinator.close();
-      else storage.close?.();
+      closeIfPresent(coordinator ?? storage);
       closeIfPresent(transport);
       closeIfPresent(server);
       throw error;
@@ -215,7 +217,7 @@ export class TransportFactory {
       coordinator: startedCoordinator,
       adapter: startedAdapter,
       close: () => {
-        startedAdapter.close();
+        closeIfPresent(startedAdapter);
         closeIfPresent(startedTransport);
         closeIfPresent(server);
       },

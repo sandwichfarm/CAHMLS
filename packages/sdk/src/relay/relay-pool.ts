@@ -113,6 +113,7 @@ export function createRequiredRelayPool(
   const localTasks = new Set<Promise<void>>();
   let localReadyUntil = 0;
   let disconnected = false;
+  let unsubscribeGeneration = 0;
 
   const emit = (
     urls: readonly string[],
@@ -123,16 +124,20 @@ export function createRequiredRelayPool(
     outcome: RelayPublishOutcome,
   ) => {
     for (const relayUrl of urls) {
-      onPublishDiagnostic({
-        relayUrl,
-        eventId: event.id,
-        eventKind: event.kind,
-        operation,
-        path,
-        attempt,
-        elapsedMs: Math.max(0, now() - startedAt),
-        outcome,
-      });
+      try {
+        onPublishDiagnostic({
+          relayUrl,
+          eventId: event.id,
+          eventKind: event.kind,
+          operation,
+          path,
+          attempt,
+          elapsedMs: Math.max(0, now() - startedAt),
+          outcome,
+        });
+      } catch {
+        // An observer must not change the outcome of a publication.
+      }
     }
   };
 
@@ -285,6 +290,9 @@ export function createRequiredRelayPool(
       let unsubscribeLocal: (() => void) | undefined;
       let subscriptionClosed = false;
       if (localPool) {
+        const generation = unsubscribeGeneration;
+        const isReleased = () =>
+          subscriptionClosed || generation !== unsubscribeGeneration || lifecycle.signal.aborted;
         const localSubscription = (async () => {
           const controller = new AbortController();
           const unlink = linkAbortSignals(controller, [lifecycle.signal]);
@@ -292,9 +300,10 @@ export function createRequiredRelayPool(
           inFlight.add(controller);
           try {
             const ready = await probeRelay(REQUIRED_LOCAL_RELAY_URL, controller.signal);
-            if (!ready || controller.signal.aborted || subscriptionClosed) return;
-            unsubscribeLocal = await localPool.subscribe(filters, onEvent, onEose);
-            if (subscriptionClosed) unsubscribeLocal();
+            if (!ready || controller.signal.aborted || isReleased()) return;
+            const unsubscribe = await localPool.subscribe(filters, onEvent, onEose);
+            if (isReleased()) unsubscribe();
+            else unsubscribeLocal = unsubscribe;
           } catch {
             // Optional localhost subscriptions never delay or fail the primary path.
           } finally {
@@ -312,6 +321,7 @@ export function createRequiredRelayPool(
       };
     },
     unsubscribe: () => {
+      unsubscribeGeneration += 1;
       primaryPool.unsubscribe();
       localPool?.unsubscribe();
     },

@@ -33,6 +33,7 @@ export function assertNonEmptyBase64(
   fieldName: string,
 ): Uint8Array {
   const decoded = decodeBase64(value);
+  /* v8 ignore next -- defensive: decodeBase64 already rejects empty payloads */
   if (decoded.length === 0) {
     throw new Error(
       `Invalid ${fieldName}: base64 payload decoded to empty bytes`,
