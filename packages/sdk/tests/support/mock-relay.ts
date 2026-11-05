@@ -1,3 +1,4 @@
+import type { AddressInfo } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
 
 interface StoredEvent {
@@ -29,8 +30,13 @@ export interface MockRelay {
   close: () => Promise<void>;
 }
 
-export async function startMockRelay(port = 8765): Promise<MockRelay> {
-  const server = new WebSocketServer({ port });
+/**
+ * Binds an explicit loopback address and, by default, a free port. Binding every
+ * interface on a fixed port can succeed beside another process that already holds
+ * 127.0.0.1:port, leaving clients silently connected to that process instead.
+ */
+export async function startMockRelay(port = 0): Promise<MockRelay> {
+  const server = new WebSocketServer({ host: "127.0.0.1", port });
   const sockets = new Set<WebSocket>();
   const events: StoredEvent[] = [];
   const subscriptions = new Map<WebSocket, Array<{ id: string; filters: Filter[] }>>();
@@ -95,10 +101,14 @@ export async function startMockRelay(port = 8765): Promise<MockRelay> {
     });
   });
 
-  await new Promise<void>((resolve) => server.once("listening", resolve));
+  await new Promise<void>((resolve, reject) => {
+    server.once("listening", resolve);
+    server.once("error", reject);
+  });
+  const boundPort = (server.address() as AddressInfo).port;
 
   return {
-    url: `ws://127.0.0.1:${port}`,
+    url: `ws://127.0.0.1:${boundPort}`,
     setBroadcastDelay(milliseconds) {
       broadcastDelayMs = Math.max(0, milliseconds);
     },

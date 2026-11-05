@@ -150,7 +150,7 @@ describe("relay pool construction", () => {
     expect(applesauce.constructed).toEqual([
       {
         urls: ["wss://relay.example"],
-        options: { publishOptions: { timeout: RELAY_PUBLISH_POLICY.primaryAttemptTimeoutMs - 250, retries: 0 } },
+        options: { publishOptions: { timeout: RELAY_PUBLISH_POLICY.primaryColdAttemptTimeoutMs - 250, retries: 0 } },
       },
       {
         urls: [REQUIRED_LOCAL_RELAY_URL],

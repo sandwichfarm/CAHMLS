@@ -7,7 +7,13 @@ export const REQUIRED_LOCAL_RELAY_URL = "ws://localhost:4870";
 export const RELAY_PUBLISH_DIAGNOSTIC_EVENT = "cordn:relay-publish-diagnostic";
 
 export const RELAY_PUBLISH_POLICY = {
+  /** Attempt budget once this pool has had a publication accepted. */
   primaryAttemptTimeoutMs: 500,
+  /**
+   * Attempt budget until then. A new connection needs DNS, TLS, and WebSocket
+   * handshakes first, which commonly exceed the budget for an open connection.
+   */
+  primaryColdAttemptTimeoutMs: 4_000,
   primaryMaxAttempts: 2,
   primaryRetryDelaysMs: [100] as readonly number[],
   localReadyTimeoutMs: 400,
@@ -32,6 +38,7 @@ type RelayPoolLike = RelayHandler;
 
 interface RelayPublishPolicy {
   primaryAttemptTimeoutMs: number;
+  primaryColdAttemptTimeoutMs: number;
   primaryMaxAttempts: number;
   primaryRetryDelaysMs: readonly number[];
   localReadyTimeoutMs: number;
@@ -93,11 +100,18 @@ export function createRequiredRelayPool(
 ): RelayHandler {
   const websocketPool = withRequiredLocalRelay(relayUrls);
   const remoteUrls = websocketPool.filter((url) => url !== REQUIRED_LOCAL_RELAY_URL);
-  const policy: RelayPublishPolicy = { ...RELAY_PUBLISH_POLICY, ...options.policy };
+  const policy: RelayPublishPolicy = {
+    ...RELAY_PUBLISH_POLICY,
+    // An explicit attempt budget applies from the start unless a cold one is also given.
+    ...(options.policy?.primaryAttemptTimeoutMs !== undefined
+      ? { primaryColdAttemptTimeoutMs: options.policy.primaryAttemptTimeoutMs }
+      : {}),
+    ...options.policy,
+  };
   const createPool = options.createPool ?? ((urls: string[], path: RelayPublishDiagnostic["path"]) =>
     new ApplesauceRelayPool(urls, {
       publishOptions: {
-        timeout: Math.max(250, (path === "primary" ? policy.primaryAttemptTimeoutMs : policy.localPublishTimeoutMs) - 250),
+        timeout: Math.max(250, (path === "primary" ? policy.primaryColdAttemptTimeoutMs : policy.localPublishTimeoutMs) - 250),
         retries: 0,
       },
     }));
@@ -113,6 +127,7 @@ export function createRequiredRelayPool(
   const localTasks = new Set<Promise<void>>();
   let localReadyUntil = 0;
   let disconnected = false;
+  let primaryAccepted = false;
   let unsubscribeGeneration = 0;
 
   const emit = (
@@ -200,8 +215,9 @@ export function createRequiredRelayPool(
           publishOptions,
           "primary",
           attempt,
-          policy.primaryAttemptTimeoutMs,
+          primaryAccepted ? policy.primaryAttemptTimeoutMs : policy.primaryColdAttemptTimeoutMs,
         );
+        primaryAccepted = true;
         return;
       } catch (error) {
         lastError = error;

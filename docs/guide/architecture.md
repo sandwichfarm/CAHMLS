@@ -58,4 +58,4 @@ Rooms depend on the `ChatCoordinatorOperations` interface, which has two impleme
 
 - **No framework dependency.** The SDK imports no UI framework. Applications bind through `subscribe()` and `getSnapshot()`.
 - **Injected side effects.** Notifications, room archiving, storage, and timers are supplied by the host application.
-- **Relay-bounded operations.** Publishes have strict attempt limits so an unreachable relay cannot hold up a room.
+- **Relay-bounded operations.** Publishes have strict attempt limits so an unreachable relay cannot hold up a room. A pool that has not yet had a publish accepted gets a longer budget, since it may still be connecting.

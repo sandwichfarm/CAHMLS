@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { Client } from "@contextvm/mcp-sdk/client";
+import type { RelayHandler } from "@contextvm/sdk/core";
+import type { NostrEvent } from "nostr-tools";
 import { generateSecretKey } from "nostr-tools/pure";
+
+import { RELAY_PUBLISH_POLICY, createRequiredRelayPool } from "../src/relay/relay-pool.js";
 
 import { ChatCoordinatorClient } from "../src/client/coordinator-client.js";
 import type { ChatCoordinatorOperations } from "../src/client/coordinator-client.js";
@@ -464,6 +468,85 @@ describe("closing a client with a request in flight", () => {
       connect.mockRestore();
       callTool.mockRestore();
       close.mockRestore();
+    }
+  });
+});
+
+describe("relay publishing on a new connection", () => {
+  const event = { id: "e".repeat(64), kind: 21059 } as NostrEvent;
+
+  function pool(publish: RelayHandler["publish"]): RelayHandler {
+    return {
+      connect: async () => undefined,
+      disconnect: async () => undefined,
+      publish,
+      subscribe: async () => () => undefined,
+      unsubscribe: () => undefined,
+      getRelayUrls: () => [],
+    };
+  }
+
+  test("gives a connection that has not accepted anything time to establish", async () => {
+    vi.useFakeTimers();
+    try {
+      let accepted = false;
+      const relay = createRequiredRelayPool(["wss://relay.example"], {
+        probeRelay: async () => false,
+        createPool: () => pool(() => new Promise((resolve) => {
+          setTimeout(() => { accepted = true; resolve(); }, 2_000);
+        })),
+      });
+
+      const publish = relay.publish(event);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await publish;
+
+      expect(accepted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("returns to the short budget once a publish has been accepted", async () => {
+    vi.useFakeTimers();
+    try {
+      const diagnostics: string[] = [];
+      let calls = 0;
+      const relay = createRequiredRelayPool(["wss://relay.example"], {
+        probeRelay: async () => false,
+        onPublishDiagnostic: ({ path, outcome }) => { if (path === "primary") diagnostics.push(outcome); },
+        createPool: () => pool(() => {
+          calls += 1;
+          return calls === 1 ? Promise.resolve() : new Promise(() => undefined);
+        }),
+      });
+      await relay.publish(event);
+
+      const second = relay.publish(event);
+      const outcome = expect(second).rejects.toMatchObject({ name: "AbortError" });
+      await vi.advanceTimersByTimeAsync(RELAY_PUBLISH_POLICY.primaryAttemptTimeoutMs * 2 + 100);
+      await outcome;
+
+      expect(diagnostics.filter((entry) => entry === "aborted")).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("still gives up on an unreachable relay within the bounded budget", async () => {
+    vi.useFakeTimers();
+    try {
+      const relay = createRequiredRelayPool(["wss://relay.example"], {
+        probeRelay: async () => false,
+        createPool: () => pool(() => new Promise(() => undefined)),
+      });
+
+      const publish = relay.publish(event);
+      const outcome = expect(publish).rejects.toMatchObject({ name: "AbortError" });
+      await vi.advanceTimersByTimeAsync(RELAY_PUBLISH_POLICY.primaryColdAttemptTimeoutMs * 2 + 100);
+      await outcome;
+    } finally {
+      vi.useRealTimers();
     }
   });
 });
