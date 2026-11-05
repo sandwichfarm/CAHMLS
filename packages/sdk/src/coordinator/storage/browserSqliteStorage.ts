@@ -45,6 +45,7 @@ class VolatileSnapshotPersistence implements SnapshotPersistence {
 
   save(): void {}
 
+  /* v8 ignore next -- clearPersistedCoordinatorState returns early without localStorage, the only case that builds this class */
   clear(): void {}
 
   close(): void {}
@@ -99,10 +100,17 @@ async function createSnapshotPersistence(): Promise<SnapshotPersistence> {
     return new VolatileSnapshotPersistence();
   }
 
+  let db: SqliteDatabase | undefined;
   try {
     const sqlite3 = await sqlite3InitModule();
-    return new SqliteSnapshotPersistence(new sqlite3.oo1.DB(SQLITE_DB_NAME, "c"));
+    db = new sqlite3.oo1.DB(SQLITE_DB_NAME, "c");
+    return new SqliteSnapshotPersistence(db);
   } catch {
+    try {
+      db?.close();
+    } catch {
+      // The database is already unusable; the fallback does not depend on it.
+    }
     return new LocalStorageSnapshotPersistence();
   }
 }
@@ -169,18 +177,26 @@ export async function createBrowserCoordinatorStorage(
   coordinatorPubkey: string,
 ): Promise<InMemoryCoordinatorStorage> {
   const persistence = persistent ? await createSnapshotPersistence() : null;
-  const snapshot = mergeDeletedGroups(
-    persistence?.load() ?? null,
-    loadDeletedGroups(coordinatorPubkey),
-  );
-  if (snapshot?.deletedGroups) {
-    saveDeletedGroups(coordinatorPubkey, snapshot.deletedGroups);
+  let storage: InMemoryCoordinatorStorage;
+  try {
+    const snapshot = mergeDeletedGroups(
+      persistence?.load() ?? null,
+      loadDeletedGroups(coordinatorPubkey),
+    );
+    if (snapshot?.deletedGroups) {
+      saveDeletedGroups(coordinatorPubkey, snapshot.deletedGroups);
+    }
+
+    storage = new InMemoryCoordinatorStorage(snapshot, (nextSnapshot) => {
+      saveDeletedGroups(coordinatorPubkey, nextSnapshot.deletedGroups!);
+      persistence?.save(nextSnapshot);
+    });
+  } catch (error) {
+    // A snapshot that cannot be restored must not leave the database open.
+    persistence?.close();
+    throw error;
   }
 
-  const storage = new InMemoryCoordinatorStorage(snapshot, (nextSnapshot) => {
-    saveDeletedGroups(coordinatorPubkey, nextSnapshot.deletedGroups ?? []);
-    persistence?.save(nextSnapshot);
-  });
   const closeStorage = storage.close.bind(storage);
   storage.close = () => {
     closeStorage();

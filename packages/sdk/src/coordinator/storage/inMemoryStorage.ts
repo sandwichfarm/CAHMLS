@@ -193,14 +193,14 @@ export class InMemoryCoordinatorStorage implements CoordinatorStorage {
       return null;
     }
 
-    const { stablePubkey, index, records } = located;
-    const [removed] = records.splice(index, 1);
+    const { stablePubkey, index, records, record } = located;
+    records.splice(index, 1);
     if (records.length === 0) {
       this.keyPackagesByIdentity.delete(stablePubkey);
     }
 
     this.persist();
-    return removed ?? null;
+    return record;
   }
 
   consumeKeyPackage(identifier: string): PublishedKeyPackageRecord | null {
@@ -382,14 +382,16 @@ export class InMemoryCoordinatorStorage implements CoordinatorStorage {
   }
 
   deleteGroup(groupId: string): void {
-    const newlyDeleted = !this.deletedGroups.has(groupId);
-    const removedGroup = this.groups.delete(groupId);
-    const removedJoinRequests = this.joinRequestsByGroup.delete(groupId);
-    this.deletedGroups.add(groupId);
-
-    if (newlyDeleted || removedGroup || removedJoinRequests) {
-      this.persist();
+    // A tombstoned group holds nothing: appends and join requests are refused,
+    // and restoring a snapshot skips its rows.
+    if (this.deletedGroups.has(groupId)) {
+      return;
     }
+
+    this.groups.delete(groupId);
+    this.joinRequestsByGroup.delete(groupId);
+    this.deletedGroups.add(groupId);
+    this.persist();
   }
 
   appendGroupMessage(params: AppendGroupMessageParams): GroupMessageRecord {
@@ -452,7 +454,7 @@ export class InMemoryCoordinatorStorage implements CoordinatorStorage {
     stablePubkey: string,
   ): PublishedKeyPackageRecord | null {
     const records = this.keyPackagesByIdentity.get(stablePubkey);
-    if (!records || records.length === 0) {
+    if (!records) {
       return null;
     }
 
@@ -463,7 +465,8 @@ export class InMemoryCoordinatorStorage implements CoordinatorStorage {
     const regular = records.find((record) => !record.isLastResort);
     if (regular) return this.removeKeyPackage(regular.keyPackageRef);
 
-    return records.at(-1) ?? null;
+    // Identities are removed with their last package, so this list is non-empty.
+    return records.at(-1)!;
   }
 
   private consumeKeyPackageByReference(
@@ -567,7 +570,12 @@ export class InMemoryCoordinatorStorage implements CoordinatorStorage {
           groupId: record.groupId,
           epoch: BigInt(record.epoch),
           ephemeralSenderPubkey: record.ephemeralSenderPubkey,
-          opaqueMessage: decodeBase64(record.opaqueMessage64),
+          // decodeBase64 refuses empty input, but toSnapshot writes "" for an
+          // empty message, and one such record must not void the whole snapshot.
+          opaqueMessage:
+            record.opaqueMessage64 === ""
+              ? new Uint8Array()
+              : decodeBase64(record.opaqueMessage64),
           createdAt: record.createdAt,
         })),
       });

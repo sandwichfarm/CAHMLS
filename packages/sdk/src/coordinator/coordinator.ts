@@ -40,58 +40,33 @@ export interface ActiveSubscriptionMetrics {
 class AsyncMessageQueue implements AsyncIterable<GroupMessageRecord> {
   private readonly values: GroupMessageRecord[] = [];
   private nextValueIndex = 0;
-  private readonly waiters: Array<{
-    resolve: (result: IteratorResult<GroupMessageRecord>) => void;
-    reject: (error: unknown) => void;
-  }> = [];
+  private readonly waiters: Array<
+    (result: IteratorResult<GroupMessageRecord>) => void
+  > = [];
   private closed = false;
-  private aborted: unknown = null;
-  private maxDepth = 0;
 
   push(value: GroupMessageRecord): void {
-    if (this.closed || this.aborted) {
+    if (this.closed) {
       return;
     }
 
     const waiter = this.waiters.shift();
     if (waiter) {
-      waiter.resolve({ value, done: false });
+      waiter({ value, done: false });
       return;
     }
 
     this.values.push(value);
-    if (this.values.length > this.maxDepth) {
-      this.maxDepth = this.values.length;
-    }
-  }
-
-  getDepth(): number {
-    return this.values.length - this.nextValueIndex;
-  }
-
-  getMaxDepth(): number {
-    return this.maxDepth;
   }
 
   close(): void {
-    if (this.closed || this.aborted) {
+    if (this.closed) {
       return;
     }
 
     this.closed = true;
     for (const waiter of this.waiters.splice(0)) {
-      waiter.resolve({ value: undefined, done: true });
-    }
-  }
-
-  abort(error: unknown): void {
-    if (this.aborted || this.closed) {
-      return;
-    }
-
-    this.aborted = error;
-    for (const waiter of this.waiters.splice(0)) {
-      waiter.reject(error);
+      waiter({ value: undefined, done: true });
     }
   }
 
@@ -113,19 +88,13 @@ class AsyncMessageQueue implements AsyncIterable<GroupMessageRecord> {
           return { value, done: false };
         }
 
-        if (this.aborted) {
-          throw this.aborted;
-        }
-
         if (this.closed) {
           return { value: undefined, done: true };
         }
 
-        return new Promise<IteratorResult<GroupMessageRecord>>(
-          (resolve, reject) => {
-            this.waiters.push({ resolve, reject });
-          },
-        );
+        return new Promise<IteratorResult<GroupMessageRecord>>((resolve) => {
+          this.waiters.push(resolve);
+        });
       },
       return: async (): Promise<IteratorResult<GroupMessageRecord>> => {
         this.close();
@@ -142,7 +111,6 @@ interface GroupMessageSubscription {
 
 interface GroupMessageSubscriber {
   push(record: GroupMessageRecord): void;
-  replay?(records: GroupMessageRecord[]): void;
   close(): void;
 }
 
@@ -268,7 +236,12 @@ export class Coordinator {
         completions.push(Promise.reject(error));
       }
     }
-    this.joinRequestNotifications.set(stored, Promise.all(completions).then(() => undefined));
+    const notifications = Promise.all(completions).then(() => undefined);
+    // A failing listener is reported to whoever waits on this request. Without
+    // a waiter it must not surface as an unhandled rejection: the request has
+    // already been stored, and hosts also pick it up by polling.
+    notifications.catch(() => undefined);
+    this.joinRequestNotifications.set(stored, notifications);
     return stored;
   }
 
@@ -286,15 +259,19 @@ export class Coordinator {
     groupId: string,
     subscriber: (record: JoinRequestRecord) => void | Promise<void>,
   ): () => void {
-    let subscribers = this.joinRequestSubscribers.get(groupId);
-    if (!subscribers) {
-      subscribers = new Set();
-      this.joinRequestSubscribers.set(groupId, subscribers);
-    }
+    const subscribers =
+      this.joinRequestSubscribers.get(groupId) ??
+      new Set<(record: JoinRequestRecord) => void | Promise<void>>();
+    this.joinRequestSubscribers.set(groupId, subscribers);
     subscribers.add(subscriber);
     return () => {
-      subscribers?.delete(subscriber);
-      if (subscribers?.size === 0) {
+      subscribers.delete(subscriber);
+      // Only drop the Set this subscription joined. A repeated unsubscribe, or
+      // one that outlives close(), must not remove a newer group registration.
+      if (
+        subscribers.size === 0 &&
+        this.joinRequestSubscribers.get(groupId) === subscribers
+      ) {
         this.joinRequestSubscribers.delete(groupId);
       }
     };
@@ -330,6 +307,13 @@ export class Coordinator {
     if (this.cleanupTimer) {
       clearInterval(this.cleanupTimer);
     }
+    // End open streams; otherwise a consumer waiting on `messages` never wakes.
+    for (const subscribers of this.groupSubscribers.values()) {
+      for (const subscriber of subscribers) {
+        subscriber.close();
+      }
+    }
+    this.groupSubscribers.clear();
     this.joinRequestSubscribers.clear();
     this.storage.close?.();
   }
@@ -399,7 +383,7 @@ export class Coordinator {
     }
     const groupIds = [...cursorsByGroup.keys()];
     const emitIfNew = (record: GroupMessageRecord): void => {
-      const lastEmittedCursor = cursorsByGroup.get(record.groupId) ?? 0;
+      const lastEmittedCursor = cursorsByGroup.get(record.groupId)!;
       if (record.cursor <= lastEmittedCursor) {
         return;
       }
@@ -416,34 +400,33 @@ export class Coordinator {
 
         emitIfNew(record);
       },
-      replay: (records) => {
-        for (const record of records) {
-          emitIfNew(record);
-        }
-      },
       close: () => queue.close(),
+    };
+    const unsubscribe = (): void => {
+      subscriber.close();
+      for (const groupId of groupIds) {
+        this.removeGroupSubscriber(groupId, subscriber);
+      }
     };
 
     for (const groupId of groupIds) {
       this.addGroupSubscriber(groupId, subscriber);
     }
 
-    const backlog = this.fetchManyGroupMessages(input);
-    subscriber.replay?.(backlog);
+    try {
+      for (const record of this.fetchManyGroupMessages(input)) {
+        emitIfNew(record);
+      }
+    } catch (error) {
+      unsubscribe();
+      throw error;
+    }
     replayingBacklog = false;
     for (const record of liveBuffer.splice(0)) {
       subscriber.push(record);
     }
 
-    return {
-      messages: queue,
-      unsubscribe: () => {
-        subscriber.close();
-        for (const groupId of groupIds) {
-          this.removeGroupSubscriber(groupId, subscriber);
-        }
-      },
-    };
+    return { messages: queue, unsubscribe };
   }
 
   private addGroupSubscriber(
