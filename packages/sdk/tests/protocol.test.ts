@@ -563,6 +563,28 @@ describe("message encryption and decryption", () => {
       await expect(decryptMessage({ ...hostState, ratchetTree }, opaqueBase64)).rejects.toThrow("MLS credential");
     });
 
+    test("rejects a message from an earlier epoch whose sender has since left", async () => {
+      const { hostState } = await pair();
+      const leaverPubkey = "c".repeat(64);
+      const leaverKeys = await createKeyPackage(leaverPubkey);
+      const admitted = await addMember(hostState, leaverKeys.stored.publicBase64);
+      const leaverState = await joinWelcome(admitted.welcomeBase64, leaverKeys.stored);
+      const sent = await encryptMessage(leaverState, envelope(leaverPubkey));
+      const framed = await unsealGroupPayloadBase64(leaverState, sent.opaqueBase64);
+
+      const suite = await getCiphersuiteImpl("MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519", nobleCryptoProvider);
+      const leaverIndex = admitted.state.ratchetTree.findIndex((node) => node?.nodeType === nodeTypes.leaf
+        && new TextDecoder().decode((node.leaf.credential as { identity: Uint8Array }).identity) === leaverPubkey);
+      const removal = await createCommit({
+        context: { cipherSuite: suite, authService: unsafeTestingAuthenticationService },
+        state: admitted.state,
+        extraProposals: [{ proposalType: 3, remove: { removed: leaverIndex / 2 } }],
+      });
+      const resealed = await sealGroupPayloadBase64(removal.newState, framed);
+
+      await expect(decryptMessage(removal.newState, resealed)).rejects.toThrow("MLS credential");
+    });
+
     test("a member cannot claim to be another member by writing the host's key in aad and event", async () => {
       const { hostState, guestState, hostPubkey } = await pair();
       const spoofed = await encryptMessage(guestState, envelope(hostPubkey, { name: "Host", badgeLabel: "host" }));

@@ -390,7 +390,7 @@ export function isRepresentableTime(milliseconds: number): boolean {
 /** The BasicCredential identity of the group member with this signature key. */
 function memberIdentityForSigningKey(state: ClientState, signingKey: Uint8Array | null): string | null {
   const member = signingKey && getGroupMembers(state).find((leaf) => equalBytes(leaf.signaturePublicKey, signingKey));
-  /* v8 ignore next -- ts-mls reads the verifying key from a member leaf; this fails closed if that changes */
+  // A message from an earlier epoch can be signed by someone who has since left.
   if (!member) return null;
   const credential = member.credential;
   if (!isDefaultCredential(credential)

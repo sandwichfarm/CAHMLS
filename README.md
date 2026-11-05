@@ -172,7 +172,7 @@ The script prompts for:
 
 ## Contributing
 
-Work on a feature branch and open a pull request against `master`. Follow [GIT-PROCEDURES.md](GIT-PROCEDURES.md) and run the gates in [AGENTS.md](AGENTS.md). Changes to `src/cordn/`, coordinator contracts, or chat admission and wire-protocol paths must also pass `pnpm check:upstream` and `pnpm test:upstream-interop`.
+Work on a feature branch and open a pull request against `master`. Follow [GIT-PROCEDURES.md](GIT-PROCEDURES.md) and run the gates in [AGENTS.md](AGENTS.md). Changes to `packages/sdk/src/`, coordinator contracts, or chat admission and wire-protocol paths must also pass `pnpm check:upstream` and `pnpm test:upstream-interop`.
 
 <a href="https://github.com/sandwichfarm/CAHMLS/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=sandwichfarm/CAHMLS" alt="Contributors" />
