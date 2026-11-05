@@ -2510,8 +2510,7 @@
     .host-utilities :global(.user-trigger) { grid-template-columns: auto minmax(0, 1fr) auto; padding-inline: .65rem; }
     .host-utilities :global(.presence-menu),
     .host-utilities :global(.notification-feed-panel),
-    .host-utilities :global(.notification-menu),
-    .host-utilities :global(.user-menu) {
+    .host-utilities :global(.notification-menu) {
       position: fixed;
       top: auto;
       right: .55rem;
@@ -2522,7 +2521,6 @@
       overflow-y: auto;
       overscroll-behavior: contain;
     }
-    .sidebar-account :global(.user-menu),
     .sidebar-account :global(.presence-menu),
     .sidebar-account :global(.notification-feed-panel),
     .sidebar-account :global(.notification-menu) {
