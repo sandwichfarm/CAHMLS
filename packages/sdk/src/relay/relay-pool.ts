@@ -7,13 +7,14 @@ export const REQUIRED_LOCAL_RELAY_URL = "ws://localhost:4870";
 export const RELAY_PUBLISH_DIAGNOSTIC_EVENT = "cordn:relay-publish-diagnostic";
 
 export const RELAY_PUBLISH_POLICY = {
-  /** Attempt budget once this pool has had a publication accepted. */
   primaryAttemptTimeoutMs: 500,
   /**
-   * Attempt budget until then. A new connection needs DNS, TLS, and WebSocket
-   * handshakes first, which commonly exceed the budget for an open connection.
+   * How long to keep retrying until this pool has had a publication accepted. A
+   * new connection needs DNS, TLS, and WebSocket handshakes, which often outlast
+   * one attempt, and it keeps establishing between attempts.
    */
-  primaryColdAttemptTimeoutMs: 4_000,
+  primaryColdRetryWindowMs: 4_000,
+  primaryColdRetryDelayMs: 250,
   primaryMaxAttempts: 2,
   primaryRetryDelaysMs: [100] as readonly number[],
   localReadyTimeoutMs: 400,
@@ -38,7 +39,8 @@ type RelayPoolLike = RelayHandler;
 
 interface RelayPublishPolicy {
   primaryAttemptTimeoutMs: number;
-  primaryColdAttemptTimeoutMs: number;
+  primaryColdRetryWindowMs: number;
+  primaryColdRetryDelayMs: number;
   primaryMaxAttempts: number;
   primaryRetryDelaysMs: readonly number[];
   localReadyTimeoutMs: number;
@@ -102,16 +104,16 @@ export function createRequiredRelayPool(
   const remoteUrls = websocketPool.filter((url) => url !== REQUIRED_LOCAL_RELAY_URL);
   const policy: RelayPublishPolicy = {
     ...RELAY_PUBLISH_POLICY,
-    // An explicit attempt budget applies from the start unless a cold one is also given.
-    ...(options.policy?.primaryAttemptTimeoutMs !== undefined
-      ? { primaryColdAttemptTimeoutMs: options.policy.primaryAttemptTimeoutMs }
+    // A caller that sets its own attempt limits gets exactly those limits.
+    ...(options.policy?.primaryMaxAttempts !== undefined || options.policy?.primaryAttemptTimeoutMs !== undefined
+      ? { primaryColdRetryWindowMs: 0 }
       : {}),
     ...options.policy,
   };
   const createPool = options.createPool ?? ((urls: string[], path: RelayPublishDiagnostic["path"]) =>
     new ApplesauceRelayPool(urls, {
       publishOptions: {
-        timeout: Math.max(250, (path === "primary" ? policy.primaryColdAttemptTimeoutMs : policy.localPublishTimeoutMs) - 250),
+        timeout: Math.max(250, (path === "primary" ? policy.primaryAttemptTimeoutMs : policy.localPublishTimeoutMs) - 250),
         retries: 0,
       },
     }));
@@ -203,7 +205,12 @@ export function createRequiredRelayPool(
   ): Promise<void> => {
     const startedAt = now();
     let lastError: unknown = new Error("Relay publication failed");
-    for (let attempt = 1; attempt <= policy.primaryMaxAttempts; attempt += 1) {
+    if (policy.primaryMaxAttempts < 1) throw lastError;
+    // The attempt cap keeps this bounded even if a caller's clock does not advance.
+    const coldMaxAttempts = policy.primaryColdRetryDelayMs > 0
+      ? Math.ceil(policy.primaryColdRetryWindowMs / policy.primaryColdRetryDelayMs)
+      : 0;
+    for (let attempt = 1; ; attempt += 1) {
       if (disconnected || lifecycle.signal.aborted || publishOptions?.abortSignal?.aborted) {
         throw new PublishAbortedError();
       }
@@ -215,16 +222,24 @@ export function createRequiredRelayPool(
           publishOptions,
           "primary",
           attempt,
-          primaryAccepted ? policy.primaryAttemptTimeoutMs : policy.primaryColdAttemptTimeoutMs,
+          policy.primaryAttemptTimeoutMs,
         );
         primaryAccepted = true;
         return;
       } catch (error) {
         lastError = error;
         if (disconnected || lifecycle.signal.aborted || publishOptions?.abortSignal?.aborted) throw error;
-        if (attempt >= policy.primaryMaxAttempts) break;
+        const withinColdWindow = !primaryAccepted
+          && attempt < coldMaxAttempts
+          && now() - startedAt < policy.primaryColdRetryWindowMs;
+        if (attempt >= policy.primaryMaxAttempts && !withinColdWindow) break;
         emit(primaryUrls, event, "primary", attempt, startedAt, "retrying");
-        await abortableDelay(policy.primaryRetryDelaysMs[attempt - 1] ?? 0, [lifecycle.signal, publishOptions?.abortSignal]);
+        await abortableDelay(
+          attempt < policy.primaryMaxAttempts
+            ? policy.primaryRetryDelaysMs[attempt - 1] ?? 0
+            : policy.primaryColdRetryDelayMs,
+          [lifecycle.signal, publishOptions?.abortSignal],
+        );
       }
     }
     throw lastError;

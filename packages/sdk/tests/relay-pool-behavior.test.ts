@@ -150,7 +150,7 @@ describe("relay pool construction", () => {
     expect(applesauce.constructed).toEqual([
       {
         urls: ["wss://relay.example"],
-        options: { publishOptions: { timeout: RELAY_PUBLISH_POLICY.primaryColdAttemptTimeoutMs - 250, retries: 0 } },
+        options: { publishOptions: { timeout: RELAY_PUBLISH_POLICY.primaryAttemptTimeoutMs - 250, retries: 0 } },
       },
       {
         urls: [REQUIRED_LOCAL_RELAY_URL],
@@ -276,7 +276,7 @@ describe("primary publication", () => {
   });
 
   test("surfaces the last error once the retry budget is exhausted", async () => {
-    const { handler, primary, outcomes } = harness({ policy: { primaryRetryDelaysMs: [10] } });
+    const { handler, primary, outcomes } = harness({ policy: { primaryRetryDelaysMs: [10], primaryColdRetryWindowMs: 0 } });
     primary.publish
       .mockRejectedValueOnce(new Error("first failure"))
       .mockRejectedValueOnce(new Error("last failure"));

@@ -486,54 +486,54 @@ describe("relay publishing on a new connection", () => {
     };
   }
 
-  test("gives a connection that has not accepted anything time to establish", async () => {
+  test("keeps retrying while a new connection establishes", async () => {
     vi.useFakeTimers();
     try {
-      let accepted = false;
+      const startedAt = Date.now();
+      let calls = 0;
       const relay = createRequiredRelayPool(["wss://relay.example"], {
         probeRelay: async () => false,
-        createPool: () => pool(() => new Promise((resolve) => {
-          setTimeout(() => { accepted = true; resolve(); }, 2_000);
-        })),
+        createPool: () => pool(async () => {
+          calls += 1;
+          if (Date.now() - startedAt < 2_000) throw new Error("not connected yet");
+        }),
       });
 
       const publish = relay.publish(event);
-      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(2_500);
       await publish;
 
-      expect(accepted).toBe(true);
+      expect(calls).toBeGreaterThan(RELAY_PUBLISH_POLICY.primaryMaxAttempts);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  test("returns to the short budget once a publish has been accepted", async () => {
+  test("uses only the short budget once a publish has been accepted", async () => {
     vi.useFakeTimers();
     try {
-      const diagnostics: string[] = [];
       let calls = 0;
       const relay = createRequiredRelayPool(["wss://relay.example"], {
         probeRelay: async () => false,
-        onPublishDiagnostic: ({ path, outcome }) => { if (path === "primary") diagnostics.push(outcome); },
-        createPool: () => pool(() => {
+        createPool: () => pool(async () => {
           calls += 1;
-          return calls === 1 ? Promise.resolve() : new Promise(() => undefined);
+          if (calls > 1) throw new Error("relay went away");
         }),
       });
       await relay.publish(event);
 
       const second = relay.publish(event);
-      const outcome = expect(second).rejects.toMatchObject({ name: "AbortError" });
-      await vi.advanceTimersByTimeAsync(RELAY_PUBLISH_POLICY.primaryAttemptTimeoutMs * 2 + 100);
+      const outcome = expect(second).rejects.toThrow("relay went away");
+      await vi.advanceTimersByTimeAsync(1_000);
       await outcome;
 
-      expect(diagnostics.filter((entry) => entry === "aborted")).toHaveLength(2);
+      expect(calls).toBe(1 + RELAY_PUBLISH_POLICY.primaryMaxAttempts);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  test("still gives up on an unreachable relay within the bounded budget", async () => {
+  test("gives up on an unreachable relay when the window closes", async () => {
     vi.useFakeTimers();
     try {
       const relay = createRequiredRelayPool(["wss://relay.example"], {
@@ -543,10 +543,63 @@ describe("relay publishing on a new connection", () => {
 
       const publish = relay.publish(event);
       const outcome = expect(publish).rejects.toMatchObject({ name: "AbortError" });
-      await vi.advanceTimersByTimeAsync(RELAY_PUBLISH_POLICY.primaryColdAttemptTimeoutMs * 2 + 100);
+      await vi.advanceTimersByTimeAsync(RELAY_PUBLISH_POLICY.primaryColdRetryWindowMs + RELAY_PUBLISH_POLICY.primaryAttemptTimeoutMs + RELAY_PUBLISH_POLICY.primaryColdRetryDelayMs);
       await outcome;
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  test("gives up even if the clock does not advance", async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      const relay = createRequiredRelayPool(["wss://relay.example"], {
+        probeRelay: async () => false,
+        now: () => 0,
+        createPool: () => pool(async () => {
+          calls += 1;
+          throw new Error("relay down");
+        }),
+      });
+
+      const outcome = expect(relay.publish(event)).rejects.toThrow("relay down");
+      await vi.advanceTimersByTimeAsync(RELAY_PUBLISH_POLICY.primaryColdRetryWindowMs * 2);
+      await outcome;
+
+      expect(calls).toBe(RELAY_PUBLISH_POLICY.primaryColdRetryWindowMs / RELAY_PUBLISH_POLICY.primaryColdRetryDelayMs);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("does not extend the attempts a caller set explicitly", async () => {
+    let calls = 0;
+    const relay = createRequiredRelayPool(["wss://relay.example"], {
+      probeRelay: async () => false,
+      policy: { primaryMaxAttempts: 1 },
+      createPool: () => pool(async () => {
+        calls += 1;
+        throw new Error("relay down");
+      }),
+    });
+
+    await expect(relay.publish(event)).rejects.toThrow("relay down");
+    expect(calls).toBe(1);
+  });
+
+  test("a policy with no cold retry delay does not retry beyond its attempts", async () => {
+    let calls = 0;
+    const relay = createRequiredRelayPool(["wss://relay.example"], {
+      probeRelay: async () => false,
+      policy: { primaryColdRetryDelayMs: 0, primaryRetryDelaysMs: [0] },
+      createPool: () => pool(async () => {
+        calls += 1;
+        throw new Error("relay down");
+      }),
+    });
+
+    await expect(relay.publish(event)).rejects.toThrow("relay down");
+    expect(calls).toBe(RELAY_PUBLISH_POLICY.primaryMaxAttempts);
   });
 });
