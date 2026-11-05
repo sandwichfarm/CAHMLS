@@ -102,9 +102,21 @@ async function decryptPersistedBlob(blob: PersistedKeyBlob, passphrase: string):
   return new Uint8Array(decrypted);
 }
 
+/** The Web Storage subset used for encrypted key persistence. */
+export type KeyStorageBackend = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
 export class KeyStorage {
+  /** Uses `globalThis.localStorage` when no backend is supplied. */
+  constructor(private readonly backend?: KeyStorageBackend) {}
+
+  private get storage(): KeyStorageBackend {
+    const storage = this.backend ?? (globalThis as { localStorage?: KeyStorageBackend }).localStorage;
+    if (!storage) throw new Error("No key storage is available; pass a backend to KeyStorage");
+    return storage;
+  }
+
   hasPersisted(): boolean {
-    return localStorage.getItem(STORAGE_KEY) !== null;
+    return this.storage.getItem(STORAGE_KEY) !== null;
   }
 
   async save(secretKey: Uint8Array, passphrase: string): Promise<void> {
@@ -125,11 +137,11 @@ export class KeyStorage {
       ciphertext: bytesToBase64Url(new Uint8Array(encrypted)),
     };
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(blob));
+    this.storage.setItem(STORAGE_KEY, JSON.stringify(blob));
   }
 
   async load(passphrase: string): Promise<Uint8Array> {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = this.storage.getItem(STORAGE_KEY);
     if (!raw) {
       throw new WrongPassphraseError();
     }
@@ -146,7 +158,7 @@ export class KeyStorage {
   }
 
   async exportBackup(passphrase: string): Promise<CoordinatorKeyBackup> {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = this.storage.getItem(STORAGE_KEY);
     if (!raw) {
       throw new WrongPassphraseError();
     }
@@ -189,7 +201,7 @@ export class KeyStorage {
   }
 
   clear(): void {
-    localStorage.removeItem(STORAGE_KEY);
+    this.storage.removeItem(STORAGE_KEY);
   }
 }
 
