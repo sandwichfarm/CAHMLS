@@ -1,21 +1,21 @@
 import { describe, expect, test, vi } from "vitest";
 
 import { configStore } from "../../src/config/config.svelte";
-import { isConfigLocked, transitionCoordinator } from "../../src/coordinator/state-machine";
+import { isConfigLocked, transitionCoordinator } from "@cahmls/sdk/runtime";
 import { CoordinatorStore, ROOM_RECOVERY_POLICY, type CoordinatorStoreRuntime } from "../../src/coordinator/coordinator.svelte";
 import {
   CHAT_COORDINATOR_CONNECT_TIMEOUT_MS,
   CHAT_COORDINATOR_REQUEST_TIMEOUT_MS,
-} from "../../src/chat/coordinator-client";
-import type { RunningTransport } from "../../src/lib/transport";
-import type { InstanceLease } from "../../src/coordinator/single-instance-guard";
-import type { CoordinatorProfilePublisherInput } from "../../src/coordinator/coordinator-profile";
-import type { HostedRoomRecoveryTarget } from "../../src/coordinator/types";
+} from "@cahmls/sdk/client";
+import type { RunningTransport } from "@cahmls/sdk/server";
+import type { InstanceLease } from "@cahmls/sdk/runtime";
+import type { CoordinatorProfilePublisherInput } from "@cahmls/sdk/runtime";
+import type { HostedRoomRecoveryTarget } from "@cahmls/sdk/runtime";
 import {
   createHostedRoomRecoveryProgress,
   type CoordinatorEvent,
   type CoordinatorStatus,
-} from "../../src/coordinator/types";
+} from "@cahmls/sdk/runtime";
 
 describe("transitionCoordinator", () => {
   test.each([

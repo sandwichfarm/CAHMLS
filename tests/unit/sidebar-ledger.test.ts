@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { StoredRoom } from "../../src/chat/room-store";
+import type { StoredRoom } from "@cahmls/sdk/client";
 import { archiveSidebarRoom, emptySidebarLedger, parseSidebarLedger, reconcileSidebarLedger, serializeSidebarLedger } from "../../src/chat/sidebar-ledger";
 
 function room(id: string, coordinatorPubkey: string, createdAt: number, overrides: Partial<StoredRoom> = {}): StoredRoom {

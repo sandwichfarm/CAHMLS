@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { verifyEvent, type Event as NostrEvent } from "nostr-tools";
 
-import { startMockRelay, type MockRelay, type PublicRelayEvent } from "./mock-relay";
+import { startMockRelay, type MockRelay, type PublicRelayEvent } from "../../packages/sdk/tests/support/mock-relay";
 
 const configStorageKey = "cordn:v1:config";
 const primaryRelayUrl = "wss://profile-primary.example.test";

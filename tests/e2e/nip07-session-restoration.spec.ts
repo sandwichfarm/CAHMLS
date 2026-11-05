@@ -1,7 +1,7 @@
 import { expect, installEstablishedInstallation, test, type Locator, type Page } from "./established-installation-fixture";
 import { finalizeEvent, generateSecretKey, getPublicKey, nip19, nip44 } from "nostr-tools";
 
-import { startMockRelay, type MockRelay } from "./mock-relay";
+import { startMockRelay, type MockRelay } from "../../packages/sdk/tests/support/mock-relay";
 
 const mockProfile = {
   display_name: "E2E NIP-07 identity",

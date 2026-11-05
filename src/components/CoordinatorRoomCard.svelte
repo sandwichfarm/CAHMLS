@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { hostIdentityForRoom, roomIdentityKey, roomUnreadCount, type StoredRoom } from "../chat/room-store";
+  import { hostIdentityForRoom, roomIdentityKey, roomUnreadCount, type StoredRoom } from "@cahmls/sdk/client";
   import ChannelPreferenceIndicators from "./ChannelPreferenceIndicators.svelte";
   import RoomActionsMenu from "./RoomActionsMenu.svelte";
   import RoomHostBadge from "./RoomHostBadge.svelte";

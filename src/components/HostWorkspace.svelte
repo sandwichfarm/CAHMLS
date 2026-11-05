@@ -3,22 +3,22 @@
   import { SvelteMap } from "svelte/reactivity";
   import { generate } from "lean-qr";
   import { toSvgDataURL } from "lean-qr/extras/svg";
-  import type { CoordinatorIdentity } from "../crypto/key-manager";
+  import type { CoordinatorIdentity } from "@cahmls/sdk/crypto";
   import type { CoordinatorStore } from "../coordinator/coordinator.svelte";
-  import type { HostedRoomRecoveryAdapter, HostedRoomRecoveryTarget } from "../coordinator/types";
+  import type { HostedRoomRecoveryAdapter, HostedRoomRecoveryTarget } from "@cahmls/sdk/runtime";
   import type { ConfigStore } from "../config/config.svelte";
-  import { createInviteUrl, normalizeRoomHostIdentity, parseInviteUrl } from "../chat/invite";
+  import { createInviteUrl, normalizeRoomHostIdentity, parseInviteUrl } from "@cahmls/sdk/client";
   import type { ChatPaneContext } from "../chat/chat-pane-context";
   import { createSameShellAutoJoinHref, createSameShellChatHref } from "../chat/room-navigation";
-  import { ChatRoomSession, coordinatorUnreadTotal, createHostedRoom, hostIdentityForRoom, listRooms, loadLastOpenRoom, loadRoom, reactionSummary, rememberActiveHostRoom, rememberLastOpenRoom, removeStoredRoom, roomIdentityKey, roomUnreadCount, ROOMS_CHANGED_EVENT, rotateRoomInvite, sameRoomIdentity, saveRoom, SERVER_OFFLINE_EVENT, SERVER_ONLINE_EVENT, type RoomIdentity, type StoredRoom } from "../chat/room-store";
+  import { ChatRoomSession, coordinatorUnreadTotal, createHostedRoom, hostIdentityForRoom, listRooms, loadLastOpenRoom, loadRoom, reactionSummary, rememberActiveHostRoom, rememberLastOpenRoom, removeStoredRoom, roomIdentityKey, roomUnreadCount, ROOMS_CHANGED_EVENT, rotateRoomInvite, sameRoomIdentity, saveRoom, SERVER_OFFLINE_EVENT, SERVER_ONLINE_EVENT, type RoomIdentity, type StoredRoom } from "@cahmls/sdk/client";
   import { emptySidebarLedger, parseSidebarLedger, reconcileSidebarLedger, serializeSidebarLedger, SIDEBAR_LEDGER_KEY, type SidebarHistoryEntry, type SidebarLedger } from "../chat/sidebar-ledger";
-  import { CHAT_EMOJI_SHORTCUTS, type ChatEmojiShortcut } from "../chat/protocol";
+  import { CHAT_EMOJI_SHORTCUTS, type ChatEmojiShortcut } from "@cahmls/sdk/client";
   import { groupMessageStreaks } from "../chat/message-presentation";
   import {
     type ChatCoordinatorClientFactory,
     type RemoteJoinRequest,
-  } from "../chat/coordinator-client";
-  import { SimplePoolNostrInstanceNetwork } from "../coordinator/single-instance-guard";
+  } from "@cahmls/sdk/client";
+  import { SimplePoolNostrInstanceNetwork } from "@cahmls/sdk/runtime";
   import CoordinatorSettings from "./CoordinatorSettings.svelte";
   import CoordinatorRoomCard from "./CoordinatorRoomCard.svelte";
   import ChannelPreferenceIndicators from "./ChannelPreferenceIndicators.svelte";

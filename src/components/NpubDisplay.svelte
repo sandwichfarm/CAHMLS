@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { CoordinatorIdentity } from "../crypto/key-manager";
+  import type { CoordinatorIdentity } from "@cahmls/sdk/crypto";
 
   interface Props {
     identity: CoordinatorIdentity;

@@ -1,5 +1,5 @@
-import type { RoomHostIdentity } from "./invite";
-import type { StoredRoom } from "./room-store";
+import type { RoomHostIdentity } from "@cahmls/sdk/client";
+import type { StoredRoom } from "@cahmls/sdk/client";
 
 export type ChatPaneConnection = "cached" | "connecting" | "connected" | "offline" | "deleted";
 

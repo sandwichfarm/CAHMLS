@@ -4,7 +4,7 @@ import { expect, installEstablishedInstallation, test } from "./established-inst
 import { generateSecretKey } from "nostr-tools";
 import { bytesToHex } from "nostr-tools/utils";
 
-import { startMockRelay, type MockRelay } from "./mock-relay";
+import { startMockRelay, type MockRelay } from "../../packages/sdk/tests/support/mock-relay";
 
 // User-visible workspace, coordinator, room, and invite behavior.
 

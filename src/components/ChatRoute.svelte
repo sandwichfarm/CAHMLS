@@ -4,11 +4,11 @@
   import { toSvgDataURL } from "lean-qr/extras/svg";
   import type { NostrSigner } from "@contextvm/sdk/core";
   import type { CoordinatorStore } from "../coordinator/coordinator.svelte";
-  import { parseInviteUrl, type ChatInvite, type RoomHostIdentity } from "../chat/invite";
+  import { parseInviteUrl, type ChatInvite, type RoomHostIdentity } from "@cahmls/sdk/client";
   import type { ChatPaneContext } from "../chat/chat-pane-context";
   import { createSameShellAutoJoinHref, createSameShellChatHref } from "../chat/room-navigation";
-  import { ChatRoomSession, createJoiningRoom, hostIdentityForRoom, loadRoom, markRoomRead, reactionSummary, reconcileRoomHostIdentity, removeStoredRoom, requireRoomSigner, roomIdentityKey, roomTargetFor, roomUnreadCount, ROOMS_CHANGED_EVENT, saveRoom, sameRoomIdentity, type StoredRoom } from "../chat/room-store";
-  import { CHAT_EMOJI_SHORTCUTS, type ChatEmojiShortcut } from "../chat/protocol";
+  import { ChatRoomSession, createJoiningRoom, hostIdentityForRoom, loadRoom, markRoomRead, reactionSummary, reconcileRoomHostIdentity, removeStoredRoom, requireRoomSigner, roomIdentityKey, roomTargetFor, roomUnreadCount, ROOMS_CHANGED_EVENT, saveRoom, sameRoomIdentity, type StoredRoom } from "@cahmls/sdk/client";
+  import { CHAT_EMOJI_SHORTCUTS, type ChatEmojiShortcut } from "@cahmls/sdk/client";
   import { groupMessageStreaks } from "../chat/message-presentation";
   import { userProfileStore } from "../identity/user-profile.svelte";
   import { channelPreferences } from "../notifications/channel-preferences.svelte";

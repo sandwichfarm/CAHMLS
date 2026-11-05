@@ -1,5 +1,5 @@
-import { createInviteUrl, type ChatInvite } from "./invite";
-import { hostIdentityForRoom, type StoredRoom } from "./room-store";
+import { createInviteUrl, type ChatInvite } from "@cahmls/sdk/client";
+import { hostIdentityForRoom, type StoredRoom } from "@cahmls/sdk/client";
 
 /** Build a room URL on the current app shell without changing its coordinator target. */
 export function createSameShellChatHref(shellOrigin: string, room: StoredRoom | ChatInvite): string {

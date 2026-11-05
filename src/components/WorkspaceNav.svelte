@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import type { CoordinatorStore } from "../coordinator/coordinator.svelte";
-  import { parseInviteUrl, type ChatInvite, type CoordinatorKeyMode, type RoomHostIdentity } from "../chat/invite";
+  import { parseInviteUrl, type ChatInvite, type CoordinatorKeyMode, type RoomHostIdentity } from "@cahmls/sdk/client";
   import { createSameShellChatHref } from "../chat/room-navigation";
-  import { coordinatorUnreadTotal, hostIdentityForRoom, listRooms, loadRoom, removeStoredRoom, roomIdentityKey, roomTargetFor, ROOM_UNREAD_CHANGED_EVENT, roomUnreadCount, ROOMS_CHANGED_EVENT, SERVER_ONLINE_EVENT, type RoomTarget, type StoredRoom } from "../chat/room-store";
+  import { coordinatorUnreadTotal, hostIdentityForRoom, listRooms, loadRoom, removeStoredRoom, roomIdentityKey, roomTargetFor, ROOM_UNREAD_CHANGED_EVENT, roomUnreadCount, ROOMS_CHANGED_EVENT, SERVER_ONLINE_EVENT, type RoomTarget, type StoredRoom } from "@cahmls/sdk/client";
   import { resourceMonitor } from "../coordinator/resource-monitor.svelte";
   import ChannelPreferenceIndicators from "./ChannelPreferenceIndicators.svelte";
   import RoomActionsMenu from "./RoomActionsMenu.svelte";

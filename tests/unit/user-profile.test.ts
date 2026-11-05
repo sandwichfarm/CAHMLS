@@ -39,8 +39,8 @@ import {
   prepareAnonymousIdentityReplacement,
 } from "../../src/identity/anonymous-identity";
 import * as anonymousIdentity from "../../src/identity/anonymous-identity";
-import { BrowserNostrSigner } from "../../src/crypto/browser-nostr-signer";
-import { loadRoom, ROOMS_CHANGED_EVENT, saveRoom, type StoredRoom } from "../../src/chat/room-store";
+import { BrowserNostrSigner } from "@cahmls/sdk/crypto";
+import { loadRoom, ROOMS_CHANGED_EVENT, saveRoom, type StoredRoom } from "@cahmls/sdk/client";
 
 const NIP07_SESSION_STORAGE_KEY = "cordn:v1:nip07-session";
 const NIP07_PUBKEY = "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0";

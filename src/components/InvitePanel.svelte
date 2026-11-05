@@ -2,8 +2,8 @@
   import { onDestroy } from "svelte";
   import { generate } from "lean-qr";
   import { toSvgDataURL } from "lean-qr/extras/svg";
-  import { createInviteUrl } from "../chat/invite";
-  import { ChatRoomSession, createHostedRoom, hostIdentityForRoom, requireRoomSigner, type StoredRoom } from "../chat/room-store";
+  import { createInviteUrl } from "@cahmls/sdk/client";
+  import { ChatRoomSession, createHostedRoom, hostIdentityForRoom, requireRoomSigner, type StoredRoom } from "@cahmls/sdk/client";
   import { userProfileStore } from "../identity/user-profile.svelte";
 
   let { coordinatorPubkey, relayUrls }: { coordinatorPubkey: string; relayUrls: string[] } = $props();

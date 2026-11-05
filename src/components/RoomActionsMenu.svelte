@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { viewportOverlay } from "../lib/viewport-overlay";
-  import { roomIdentityKey } from "../chat/room-store";
+  import { roomIdentityKey } from "@cahmls/sdk/client";
   import { channelPreferences, type ChannelNotificationMode, type ChannelSoundMode } from "../notifications/channel-preferences.svelte";
 
   interface Props {

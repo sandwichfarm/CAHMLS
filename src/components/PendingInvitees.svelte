@@ -1,7 +1,7 @@
 <script lang="ts">
   import { nip19 } from "nostr-tools";
   import { SvelteMap } from "svelte/reactivity";
-  import type { RemoteJoinRequest } from "../chat/coordinator-client";
+  import type { RemoteJoinRequest } from "@cahmls/sdk/client";
   import {
     createPubkeyAvatar,
     fetchNostrProfiles,

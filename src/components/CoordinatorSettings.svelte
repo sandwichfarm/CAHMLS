@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import type { CoordinatorIdentity } from "../crypto/key-manager";
+  import type { CoordinatorIdentity } from "@cahmls/sdk/crypto";
   import type { CoordinatorStore } from "../coordinator/coordinator.svelte";
   import { normalizeCoordinatorName, type ConfigStore } from "../config/config.svelte";
   import NpubDisplay from "./NpubDisplay.svelte";

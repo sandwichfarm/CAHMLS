@@ -9,8 +9,8 @@ import {
   loadAnonymousIdentity,
   prepareAnonymousIdentityReplacement,
 } from "./anonymous-identity";
-import type { BrowserNostrSigner } from "../crypto/browser-nostr-signer";
-import { retireAnonymousMemberships, type MembershipRetirementJournal } from "../chat/room-store";
+import type { BrowserNostrSigner } from "@cahmls/sdk/crypto";
+import { retireAnonymousMemberships, type MembershipRetirementJournal } from "@cahmls/sdk/client";
 
 export const PROFILE_RELAYS = ["wss://purplepag.es", "wss://relay.damus.io"] as const;
 export const NIP46_CONNECT_RELAYS = ["wss://bucket.coracle.social"] as const;

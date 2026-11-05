@@ -1,5 +1,11 @@
-import { DEFAULT_MAX_USERS, validateMaxUsers, validateRelayUrl, validateShareableRelayUrl } from "./config-validator";
-import { shareableRelayUrls, withRequiredLocalRelay } from "../lib/relay-pool";
+import {
+  DEFAULT_MAX_USERS,
+  normalizeCoordinatorName,
+  validateMaxUsers,
+  validateRelayUrl,
+  validateShareableRelayUrl,
+} from "@cahmls/sdk/runtime";
+import { shareableRelayUrls, withRequiredLocalRelay } from "@cahmls/sdk/relay";
 
 const CONFIG_STORAGE_KEY = "cordn:v1:config";
 const CONFIG_STORAGE_VERSION = 1;
@@ -354,6 +360,8 @@ export class ConfigStore {
 
 export const configStore = new ConfigStore();
 
+export { normalizeCoordinatorName };
+
 export function clearPersistedConfig(): void {
   if ("localStorage" in globalThis) {
     localStorage.removeItem(CONFIG_STORAGE_KEY);
@@ -431,12 +439,6 @@ function normalizeName(value: unknown, maxLength: number): string | undefined {
   if (typeof value !== "string") return undefined;
   const normalized = value.trim().slice(0, maxLength);
   return normalized || undefined;
-}
-
-export function normalizeCoordinatorName(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const normalized = Array.from(value.trim()).slice(0, 48).join("");
-  return normalized || null;
 }
 
 function normalizeEmoji(value: unknown): string | undefined {

@@ -1,6 +1,6 @@
 import { generateSecretKey } from "nostr-tools";
 
-import { BrowserNostrSigner } from "../crypto/browser-nostr-signer";
+import { BrowserNostrSigner } from "@cahmls/sdk/crypto";
 
 export const ANONYMOUS_IDENTITY_STORAGE_KEY = "cordn:v1:anonymous-identity";
 

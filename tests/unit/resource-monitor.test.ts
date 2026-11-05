@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { normalizeLocalMessageRate, ResourceMonitor } from "../../src/coordinator/resource-monitor.svelte";
-import type { RunningTransport } from "../../src/lib/transport";
+import type { RunningTransport } from "@cahmls/sdk/server";
 
 type Handler = () => void;
 

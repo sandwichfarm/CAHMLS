@@ -1,39 +1,40 @@
+import "../sdk-bindings";
 import { configStore, type BrowserCoordinatorOptions } from "../config/config.svelte";
 import { SvelteSet } from "svelte/reactivity";
 import {
   clearPersistedCoordinatorState,
   createBrowserCoordinatorStorage,
-} from "../cordn/coordinator/storage/browserSqliteStorage";
-import { KeyManager } from "../crypto/key-manager";
+} from "@cahmls/sdk/storage/browser";
+import { KeyManager } from "@cahmls/sdk/crypto";
 import {
   keyStorage,
   WrongPassphraseError,
   type CoordinatorKeyBackup,
-} from "../crypto/key-storage";
-import { transportFactory, type RunningTransport, type TransportDiagnostics } from "../lib/transport";
-import { removeHostedRoomsForCoordinator, ROOMS_CHANGED_EVENT } from "../chat/room-store";
+} from "@cahmls/sdk/crypto";
+import { transportFactory, type RunningTransport, type TransportDiagnostics } from "@cahmls/sdk/server";
+import { removeHostedRoomsForCoordinator, ROOMS_CHANGED_EVENT } from "@cahmls/sdk/client";
 import { SIDEBAR_LEDGER_KEY } from "../chat/sidebar-ledger";
 import {
   CHAT_COORDINATOR_CONNECT_TIMEOUT_MS,
   CHAT_COORDINATOR_REQUEST_TIMEOUT_MS,
   type ChatCoordinatorOperations,
   type CoordinatorTarget,
-} from "../chat/coordinator-client";
-import { LocalHostCoordinatorClient } from "../chat/local-coordinator-client";
+} from "@cahmls/sdk/client";
+import { LocalHostCoordinatorClient } from "@cahmls/sdk/client";
 import { resourceMonitor } from "./resource-monitor.svelte";
 import {
   publishCoordinatorProfile,
   type CoordinatorProfilePublisherInput,
-} from "./coordinator-profile";
+} from "@cahmls/sdk/runtime";
 import {
   clearCoordinatorInstanceRecords,
   INSTANCE_RUNNING_MESSAGE,
   SingleInstanceGuard,
   type InstanceLease,
   type SingleInstanceAcquireInput,
-} from "./single-instance-guard";
-import { isConfigLocked, transitionCoordinator } from "./state-machine";
-import { createHostedRoomRecoveryProgress } from "./types";
+} from "@cahmls/sdk/runtime";
+import { isConfigLocked, transitionCoordinator } from "@cahmls/sdk/runtime";
+import { createHostedRoomRecoveryProgress } from "@cahmls/sdk/runtime";
 import type {
   CoordinatorLoadState,
   CoordinatorStartupPhase,
@@ -43,7 +44,7 @@ import type {
   HostedRoomRecoveryProgress,
   HostedRoomRecoveryTarget,
   RelayConnectionStatus,
-} from "./types";
+} from "@cahmls/sdk/runtime";
 
 export interface DebugLogEntry {
   id: string;

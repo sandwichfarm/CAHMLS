@@ -7,7 +7,7 @@
   } from "../identity/user-profile.svelte";
   import { nostrSocialStore } from "../invites/nostr-social.svelte";
   import IdentityRotationDialog from "./IdentityRotationDialog.svelte";
-  import { anonymousMembershipImpact } from "../chat/room-store";
+  import { anonymousMembershipImpact } from "@cahmls/sdk/client";
   import OperatorIdentityChoices from "./OperatorIdentityChoices.svelte";
   import { viewportOverlay } from "../lib/viewport-overlay";
 

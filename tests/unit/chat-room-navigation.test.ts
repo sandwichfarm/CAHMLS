@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { parseInviteUrl, type ChatInvite } from "../../src/chat/invite";
+import { parseInviteUrl, type ChatInvite } from "@cahmls/sdk/client";
 import { createSameShellChatHref } from "../../src/chat/room-navigation";
-import type { StoredRoom } from "../../src/chat/room-store";
+import type { StoredRoom } from "@cahmls/sdk/client";
 
 describe("same-shell room navigation", () => {
   test("renders a stored room on the accepted shell without exposing its invite capability", () => {

@@ -5,7 +5,7 @@ import {
   createInviteUrl,
   parseInviteMessage,
   parseInviteUrl,
-} from "../../src/chat/invite";
+} from "@cahmls/sdk/client";
 import { createSameShellAutoJoinHref } from "../../src/chat/room-navigation";
 
 describe("Feature: self-contained chat invitations", () => {
