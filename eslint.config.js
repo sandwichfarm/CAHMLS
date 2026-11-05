@@ -11,7 +11,7 @@ export default tseslint.config(
     ignores: ["**/dist/**", "**/node_modules/**", "**/coverage/**", "playwright-report/**", "test-results/**", "docs/reference/**", "docs/.vitepress/cache/**", "docs/.vitepress/dist/**"],
   },
   {
-    files: ["**/*.{ts,svelte}"],
+    files: ["**/*.{ts,svelte,mjs}"],
     languageOptions: {
       parserOptions: {
         parser: tseslint.parser,
@@ -22,6 +22,7 @@ export default tseslint.config(
       },
     },
     rules: {
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", ignoreRestSiblings: true }],
       "no-restricted-imports": [
         "error",
         {
