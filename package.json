@@ -19,7 +19,10 @@
     "ci": "pnpm lint && pnpm test && pnpm build && pnpm test:e2e",
     "sdk:build": "pnpm --filter @cahmls/sdk build",
     "sdk:coverage": "pnpm --filter @cahmls/sdk test:coverage",
-    "sdk:verify-package": "pnpm --filter @cahmls/sdk build && pnpm --filter @cahmls/sdk test:package"
+    "sdk:verify-package": "pnpm --filter @cahmls/sdk build && pnpm --filter @cahmls/sdk test:package",
+    "docs:dev": "pnpm --filter @cahmls/docs dev",
+    "docs:build": "pnpm --filter @cahmls/docs build",
+    "docs:preview": "pnpm --filter @cahmls/docs preview"
   },
   "dependencies": {
     "@contextvm/mcp-sdk": "1.30.0",

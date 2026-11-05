@@ -8,7 +8,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   ...svelte.configs.recommended,
   {
-    ignores: ["dist/**", "node_modules/**", "coverage/**", "playwright-report/**", "test-results/**"],
+    ignores: ["**/dist/**", "**/node_modules/**", "**/coverage/**", "playwright-report/**", "test-results/**", "docs/reference/**", "docs/.vitepress/cache/**", "docs/.vitepress/dist/**"],
   },
   {
     files: ["**/*.{ts,svelte}"],

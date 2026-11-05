@@ -179,13 +179,7 @@ export class Coordinator {
         this.deleteExpiredJoinRequests(readThreshold, unreadThreshold);
       }, intervalMs);
       // Allow the timer to not keep the process alive.
-      if (
-        this.cleanupTimer &&
-        typeof this.cleanupTimer === "object" &&
-        "unref" in this.cleanupTimer
-      ) {
-        this.cleanupTimer.unref();
-      }
+      (this.cleanupTimer as unknown as { unref?: () => void }).unref?.();
     }
   }
 
