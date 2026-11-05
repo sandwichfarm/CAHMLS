@@ -68,9 +68,13 @@ interface InspectableNostrServerTransport {
 }
 
 function closeIfPresent(value: unknown): void {
-  const candidate = value as { close?: () => void } | null;
-  if (typeof candidate?.close === "function") {
-    candidate.close();
+  const candidate = value as { close?: () => unknown } | null;
+  if (typeof candidate?.close !== "function") return;
+  // Shutdown is best-effort: one failing layer must not keep the others open.
+  try {
+    void Promise.resolve(candidate.close()).catch(() => undefined);
+  } catch {
+    // Ignored for the same reason.
   }
 }
 
@@ -115,88 +119,104 @@ export class TransportFactory {
     diagnostics?.onStartupPhase?.({ phase: "opening-storage" });
     const storage = await (this.deps.createStorage ?? createBrowserCoordinatorStorage)(persistent, coordinatorPubkey);
     diagnostics?.onStartupPhase?.({ phase: "preparing-runtime" });
-    const coordinator = createCoordinator({
-      storage,
-    });
+    let coordinator: Coordinator | undefined;
+    let transport: NostrServerTransport | undefined;
+    let adapter: CoordinatorAdapter | undefined;
+    try {
+      coordinator = createCoordinator({
+        storage,
+      });
 
-    const relayHandler = createInstrumentedRelayHandler(websocketPool, diagnostics);
-    const transport = new NostrServerTransport({
-      signer,
-      relayHandler,
-      serverInfo: {
-        name: coordinatorName,
-        about: `Cordn coordinator running in a browser tab; key package quota ${options.maxUsers} per identity`,
-      },
-      isAnnouncedServer: options.announce,
-      injectClientPubkey: true,
-      injectRequestEventId: true,
-      oversizedTransfer: { enabled: true },
-      openStream: { enabled: true },
-    });
-    const inspectableTransport = transport as unknown as InspectableNostrServerTransport;
-    // The SDK's discoverability path otherwise creates a fresh relay pool with
-    // its own long retry loop. Keep metadata/announcement delivery on the same
-    // bounded, lifecycle-owned path as every other coordinator publication.
-    inspectableTransport.publishEventToRelayUrls = (event) => relayHandler.publish(event);
-    const processIncomingEvent = inspectableTransport.processIncomingEvent.bind(transport);
-    inspectableTransport.processIncomingEvent = async (event) => {
-      diagnostics?.onNostrEvent?.({
-        summary: summarizeNostrEvent(event),
+      const relayHandler = createInstrumentedRelayHandler(websocketPool, diagnostics);
+      transport = new NostrServerTransport({
+        signer,
+        relayHandler,
+        serverInfo: {
+          name: coordinatorName,
+          about: `Cordn coordinator running in a browser tab; key package quota ${options.maxUsers} per identity`,
+        },
+        isAnnouncedServer: options.announce,
+        injectClientPubkey: true,
+        injectRequestEventId: true,
+        oversizedTransfer: { enabled: true },
+        openStream: { enabled: true },
       });
-      await processIncomingEvent(event);
-    };
-    transport.addInboundMiddleware(async (message, ctx, forward) => {
-      const disabledStreamId = disableUnusedOpenStream(inspectableTransport, message);
-      const cancelledStreamId = await abortCancelledOpenStream(inspectableTransport, message);
-      diagnostics?.onInboundMessage?.({
-        method: getJsonRpcMethod(message),
-        clientPubkey: ctx.clientPubkey,
-        summary: summarizeJsonRpcMessage(message, disabledStreamId, cancelledStreamId),
-      });
-      await forward(message);
-    });
-    const send = transport.send.bind(transport);
-    transport.send = async (message) => {
-      try {
-        await send(message);
-        diagnostics?.onOutboundMessage?.({
-          type: getJsonRpcMessageType(message),
-          summary: summarizeJsonRpcMessage(message),
-          error: getJsonRpcErrorMessage(message),
+      const inspectableTransport = transport as unknown as InspectableNostrServerTransport;
+      // The SDK's discoverability path otherwise creates a fresh relay pool with
+      // its own long retry loop. Keep metadata/announcement delivery on the same
+      // bounded, lifecycle-owned path as every other coordinator publication.
+      inspectableTransport.publishEventToRelayUrls = (event) => relayHandler.publish(event);
+      const processIncomingEvent = inspectableTransport.processIncomingEvent.bind(transport);
+      inspectableTransport.processIncomingEvent = async (event) => {
+        diagnostics?.onNostrEvent?.({
+          summary: summarizeNostrEvent(event),
         });
-      } catch (error) {
-        const normalizedError = error instanceof Error ? error : new Error(String(error));
-        diagnostics?.onOutboundError?.(normalizedError);
-        throw error;
-      }
-    };
-    transport.onerror = (error) => diagnostics?.onOutboundError?.(error);
-    transport.onclose = () => diagnostics?.onClosed?.();
-    const resolveRequestEvent: ResolveRequestEvent = (requestEventId) =>
-      transport.getNostrRequestEvent(requestEventId) ?? null;
-    const adapter = new CoordinatorAdapter(
-      coordinator,
-      resolveRequestEvent,
-      createBrowserAbuseProtection(options),
-    );
+        await processIncomingEvent(event);
+      };
+      transport.addInboundMiddleware(async (message, ctx, forward) => {
+        const disabledStreamId = disableUnusedOpenStream(inspectableTransport, message);
+        const cancelledStreamId = await abortCancelledOpenStream(inspectableTransport, message);
+        diagnostics?.onInboundMessage?.({
+          method: getJsonRpcMethod(message),
+          clientPubkey: ctx.clientPubkey,
+          summary: summarizeJsonRpcMessage(message, disabledStreamId, cancelledStreamId),
+        });
+        await forward(message);
+      });
+      const send = transport.send.bind(transport);
+      transport.send = async (message) => {
+        try {
+          await send(message);
+          diagnostics?.onOutboundMessage?.({
+            type: getJsonRpcMessageType(message),
+            summary: summarizeJsonRpcMessage(message),
+            error: getJsonRpcErrorMessage(message),
+          });
+        } catch (error) {
+          const normalizedError = error instanceof Error ? error : new Error(String(error));
+          diagnostics?.onOutboundError?.(normalizedError);
+          throw error;
+        }
+      };
+      transport.onerror = (error) => diagnostics?.onOutboundError?.(error);
+      transport.onclose = () => diagnostics?.onClosed?.();
+      const resolveRequestEvent: ResolveRequestEvent = (requestEventId) =>
+        transport?.getNostrRequestEvent(requestEventId) ?? null;
+      adapter = new CoordinatorAdapter(
+        coordinator,
+        resolveRequestEvent,
+        createBrowserAbuseProtection(options),
+      );
 
-    registerCoordinatorMethods(server, adapter);
+      registerCoordinatorMethods(server, adapter);
 
-    diagnostics?.onStartupPhase?.({ phase: "connecting-relays" });
-    await server.connect(transport);
-    diagnostics?.onStarted?.({
-      publicKeyHex: coordinatorPubkey,
-      relayUrls: websocketPool,
-    });
+      diagnostics?.onStartupPhase?.({ phase: "connecting-relays" });
+      await server.connect(transport);
+      diagnostics?.onStarted?.({
+        publicKeyHex: coordinatorPubkey,
+        relayUrls: websocketPool,
+      });
+    } catch (error) {
+      // Coordinator.close() also closes storage; without one, close storage directly.
+      if (coordinator) coordinator.close();
+      else storage.close?.();
+      closeIfPresent(transport);
+      closeIfPresent(server);
+      throw error;
+    }
+
+    const startedAdapter = adapter;
+    const startedTransport = transport;
+    const startedCoordinator = coordinator;
 
     return {
       server,
-      transport,
-      coordinator,
-      adapter,
+      transport: startedTransport,
+      coordinator: startedCoordinator,
+      adapter: startedAdapter,
       close: () => {
-        adapter.close();
-        closeIfPresent(transport);
+        startedAdapter.close();
+        closeIfPresent(startedTransport);
         closeIfPresent(server);
       },
     };

@@ -635,6 +635,9 @@ describe("canonical Cordn client conformance", () => {
       async postGroupMessage() {
         return { cursor: 7, gid: room.id, at: 43 };
       },
+      async fetchMessages() {
+        return [];
+      },
       async storeWelcome(target: string, reference: string, welcome: string) {
         calls.storedTarget = target;
         calls.storedReference = reference;
@@ -709,6 +712,9 @@ describe("canonical Cordn client conformance", () => {
       async postGroupMessage() {
         return { cursor: 11, gid: room.id, at: 97 };
       },
+      async fetchMessages() {
+        return [];
+      },
       async storeWelcome(_target: string, reference: string, welcome: string) {
         deliveredReference = reference;
         deliveredWelcome = welcome;
@@ -774,6 +780,9 @@ describe("canonical Cordn client conformance", () => {
       },
       async postGroupMessage() {
         return { cursor: 9, gid: room.id, at: 85 };
+      },
+      async fetchMessages() {
+        return [];
       },
       async storeWelcome(_target: string, _reference: string, welcome: string) {
         deliveredWelcome = welcome;

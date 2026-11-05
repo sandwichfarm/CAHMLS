@@ -134,11 +134,15 @@ export const defaultCoordinatorRuntimeDeps: CoordinatorRuntimeDeps = {
   wait(milliseconds, signal) {
     return new Promise((resolve, reject) => {
       if (signal.aborted) return reject(abortError());
-      const timer = setTimeout(resolve, milliseconds);
-      signal.addEventListener("abort", () => {
+      const abort = () => {
         clearTimeout(timer);
         reject(abortError());
-      }, { once: true });
+      };
+      const timer = setTimeout(() => {
+        signal.removeEventListener("abort", abort);
+        resolve();
+      }, milliseconds);
+      signal.addEventListener("abort", abort, { once: true });
     });
   },
   async runAttempt(operation, timeoutMs, signal) {
@@ -147,6 +151,7 @@ export const defaultCoordinatorRuntimeDeps: CoordinatorRuntimeDeps = {
     const abort = () => attemptController.abort();
     signal.addEventListener("abort", abort, { once: true });
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let rejectOnAbort: (() => void) | null = null;
     try {
       await Promise.race([
         operation(attemptController.signal),
@@ -155,15 +160,17 @@ export const defaultCoordinatorRuntimeDeps: CoordinatorRuntimeDeps = {
             attemptController.abort();
             reject(new Error("Hosted room recovery timed out"));
           }, timeoutMs);
-          signal.addEventListener("abort", () => {
+          rejectOnAbort = () => {
             if (timer !== null) clearTimeout(timer);
             reject(abortError());
-          }, { once: true });
+          };
+          signal.addEventListener("abort", rejectOnAbort, { once: true });
         }),
       ]);
     } finally {
       if (timer !== null) clearTimeout(timer);
       signal.removeEventListener("abort", abort);
+      if (rejectOnAbort) signal.removeEventListener("abort", rejectOnAbort);
     }
   },
   profilePublisher(input) {
@@ -302,6 +309,7 @@ export class CoordinatorRuntime {
   private startupGeneration = 0;
   private startupController: AbortController | null = null;
   private startupPromise: Promise<void> | null = null;
+  private stopPromise: Promise<void> | null = null;
   private profilePublicationPromise: Promise<CoordinatorProfilePublicationResult> | null = null;
   private readonly config: CoordinatorRuntimeConfig;
   private readonly deps: CoordinatorRuntimeDeps;
@@ -638,6 +646,7 @@ export class CoordinatorRuntime {
       this.addDebugLog("info", "coordinator started", keyManager.identity.npub);
     } catch (error) {
       if (!this.ownsGeneration(generation, signal)) return;
+      if (this.running) this.deps.closeTransport(this.running);
       this.running = null;
       await this.releaseInstanceLease();
       this.deps.stopResourceMonitor();
@@ -654,7 +663,18 @@ export class CoordinatorRuntime {
     }
   }
 
-  async stop(): Promise<void> {
+  /** Stop the coordinator. Safe to call repeatedly and while already idle. */
+  stop(): Promise<void> {
+    if (this.stopPromise) return this.stopPromise;
+    if (this.status === "idle" && !this.startupPromise) return Promise.resolve();
+    const transaction = this.stopOnce().finally(() => {
+      if (this.stopPromise === transaction) this.stopPromise = null;
+    });
+    this.stopPromise = transaction;
+    return transaction;
+  }
+
+  private async stopOnce(): Promise<void> {
     this.addDebugLog("info", "coordinator stop requested");
     this.startupGeneration += 1;
     this.startupController?.abort();
@@ -662,6 +682,8 @@ export class CoordinatorRuntime {
     const activeStartup = this.startupPromise;
     if (activeStartup) await activeStartup;
     if (this.startupPromise === activeStartup) this.startupPromise = null;
+    // A startup that failed on its own has already returned to idle.
+    if (this.status === "idle") return;
     this.update({ status: transitionCoordinator(this.status, "stop") });
     await this.stopSync();
     this.recoveryTargets = [];
@@ -861,7 +883,7 @@ export class CoordinatorRuntime {
 
   async destroy(): Promise<void> {
     const destroyedCoordinatorPubkey = this.identity.publicKeyHex;
-    if (this.status === "running") {
+    if (this.status !== "idle") {
       await this.stop();
     } else {
       await this.stopSync();

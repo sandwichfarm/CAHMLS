@@ -192,6 +192,8 @@ export class ChatRoomSession {
   private lifecycleGeneration = 0;
   private hasCompletedInitialMessageSync = false;
   private readonly knownJoinRequestIds = new Set<string>();
+  /** Cursors of this session's own posts that the next pull must not try to decrypt. */
+  private readonly ownPostedCursors = new Set<number>();
   private readonly listeners = new Set<() => void>();
   status: RoomStatus = { connection: "connecting" };
   pendingJoinRequests: RemoteJoinRequest[] = [];
@@ -241,6 +243,8 @@ export class ChatRoomSession {
       this.lifecycleGeneration += 1;
       this.stopped = true;
       void this.client?.close();
+      // A closed client can never be reused; a later attempt must create a new one.
+      this.client = null;
     };
     signal.addEventListener("abort", abort, { once: true });
     try {
@@ -547,8 +551,8 @@ export class ChatRoomSession {
       }
     } catch (error) {
       await this.client?.close();
-      if (!active()) throw new DOMException("Recovery cancelled", "AbortError");
       this.client = null;
+      if (!active()) throw new DOMException("Recovery cancelled", "AbortError");
       this.status = { connection: "connecting" };
       throw new Error("Hosted room recovery failed", { cause: error });
     }
@@ -612,6 +616,16 @@ export class ChatRoomSession {
     requests: RemoteJoinRequest[],
   ): Promise<{ accepted: RemoteJoinRequest[]; retryable: RemoteJoinRequest[] }> {
     const retryable: RemoteJoinRequest[] = [];
+    if (requests.length > 0) {
+      // A commit advances the epoch, after which older messages can no longer be
+      // decrypted. Read everything already delivered before changing membership.
+      try {
+        await this.pullMessages(client);
+      } catch (error) {
+        console.warn("Could not read room messages before admission; will retry", error);
+        return { accepted: await this.flushPendingWelcomes(client), retryable: requests };
+      }
+    }
     for (const request of requests) {
       try {
         // Prefer the exact package named by this request. A stable Nostr
@@ -639,7 +653,7 @@ export class ChatRoomSession {
         const added = await addMember(decodeState(this.room.stateBase64), keyPackageBase64);
         const posted = await client.postGroupMessage(this.room.id, added.commitBase64);
         this.room.stateBase64 = encodeState(added.state);
-        this.room.lastCursor = Math.max(this.room.lastCursor, posted.cursor);
+        this.ownPostedCursors.add(posted.cursor);
         this.room.pendingWelcomes = [...(this.room.pendingWelcomes ?? []), {
           requestPk: request.pk,
           requestKpRef: request.kp_ref,
@@ -774,7 +788,9 @@ export class ChatRoomSession {
   private async flushPending(client: ChatCoordinatorOperations): Promise<void> {
     for (const pending of [...this.room.pending]) {
       const posted = await client.postGroupMessage(this.room.id, pending.opaqueBase64);
-      this.room.lastCursor = Math.max(this.room.lastCursor, posted.cursor);
+      // Keep lastCursor until the next pull: other members may have posted at
+      // lower cursors since the previous fetch, and those must still be read.
+      this.ownPostedCursors.add(posted.cursor);
       this.room.messages = this.room.messages.map((message) => message.id === pending.id ? { ...message, cursor: posted.cursor, pending: false } : message);
       this.room.reactions = (this.room.reactions ?? []).map((reaction) => reaction.id === pending.id ? { ...reaction, cursor: posted.cursor } : reaction);
       this.room.pending = this.room.pending.filter((message) => message.id !== pending.id);
@@ -787,6 +803,10 @@ export class ChatRoomSession {
     const shouldNotify = this.hasCompletedInitialMessageSync;
     const hadEstablishedBaseline = this.room.readState?.baselineEstablished === true && isRoomReadState(this.room.readState);
     for (const message of messages) {
+      if (this.ownPostedCursors.has(message.cursor)) {
+        this.room.lastCursor = Math.max(this.room.lastCursor, message.cursor);
+        continue;
+      }
       try {
         const decoded = await decryptMessage(state, message.msg_64, {
           expectedHostPubkey: groupCreatorPubkey(state) ?? undefined,
@@ -820,6 +840,11 @@ export class ChatRoomSession {
       }
     }
     this.room.stateBase64 = encodeState(state);
+    // This fetch ran after those posts, so everything at or below them was delivered.
+    for (const cursor of this.ownPostedCursors) {
+      this.room.lastCursor = Math.max(this.room.lastCursor, cursor);
+    }
+    this.ownPostedCursors.clear();
     if (!hadEstablishedBaseline) {
       this.room.readState = {
         version: 1,

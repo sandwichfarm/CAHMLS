@@ -100,6 +100,8 @@ export class ChatCoordinatorClient implements ChatCoordinatorOperations {
   }
 
   async close(): Promise<void> {
+    // Abort first so in-flight calls and retry delays cannot reconnect a closed client.
+    this.lifecycle.abort();
     await Promise.allSettled([
       this.stableClient.close(),
       this.ephemeralClient.close(),
@@ -108,7 +110,6 @@ export class ChatCoordinatorClient implements ChatCoordinatorOperations {
       this.stableTransport.close(),
       this.ephemeralTransport.close(),
     ]);
-    this.lifecycle.abort();
     this.stableConnected = null;
     this.ephemeralConnected = null;
   }
@@ -183,13 +184,15 @@ export class ChatCoordinatorClient implements ChatCoordinatorOperations {
     try {
       await connected;
     } catch (error) {
-      if (kind === "stable") this.stableConnected = null;
-      else this.ephemeralConnected = null;
+      // A concurrent caller may already have replaced a failed attempt.
+      if (kind === "stable" && this.stableConnected === connected) this.stableConnected = null;
+      if (kind === "ephemeral" && this.ephemeralConnected === connected) this.ephemeralConnected = null;
       throw error;
     }
   }
 
   private async call<T>(kind: CoordinatorTransportKind, name: string, args: Record<string, unknown>): Promise<T> {
+    if (this.lifecycle.signal.aborted) throw new Error("Coordinator client is closed");
     await this.ensureConnected(kind);
     const client = kind === "stable" ? this.stableClient : this.ephemeralClient;
     const response = await client.callTool(
@@ -218,14 +221,27 @@ export class ChatCoordinatorClient implements ChatCoordinatorOperations {
    * operations are idempotent at the coordinator, so a lost response can be
    * retried without creating another package or another pending request.
    */
+  private retryDelay(milliseconds: number): Promise<void> {
+    return new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timer);
+        this.lifecycle.signal.removeEventListener("abort", finish);
+        resolve();
+      };
+      const timer = setTimeout(finish, milliseconds);
+      this.lifecycle.signal.addEventListener("abort", finish, { once: true });
+    });
+  }
+
   private async callIdempotentWrite<T>(name: string, args: Record<string, unknown>): Promise<T> {
     for (let attempt = 0; ; attempt += 1) {
       try {
         return await this.call<T>("stable", name, args);
       } catch (error) {
         const delay = IDEMPOTENT_WRITE_RETRY_DELAYS_MS[attempt];
-        if (delay === undefined) throw error;
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        if (delay === undefined || this.lifecycle.signal.aborted) throw error;
+        await this.retryDelay(delay);
+        if (this.lifecycle.signal.aborted) throw error;
       }
     }
   }
