@@ -187,6 +187,12 @@ export class ChatRoomSession {
   private readonly listeners = new Set<() => void>();
   status: RoomStatus = { connection: "connecting" };
   pendingJoinRequests: RemoteJoinRequest[] = [];
+  /**
+   * Why the last admission attempt could not admit everyone. Admission runs on
+   * a poll, so a failure that stays in the console reads to the host as a
+   * button that silently does nothing.
+   */
+  admissionError: string | null = null;
 
   constructor(
     public room: StoredRoom,
@@ -469,6 +475,7 @@ export class ChatRoomSession {
       }
       if (!this.room.isHost && this.room.joinRequestSent) {
         await this.upgradeLegacyJoinRequest(client);
+        await this.restoreMissingKeyPackage(client);
         await this.acceptWelcome(client);
       }
       if (!this.room.isHost && this.room.joinRequestSent) {
@@ -602,6 +609,7 @@ export class ChatRoomSession {
     requests: RemoteJoinRequest[],
   ): Promise<{ accepted: RemoteJoinRequest[]; retryable: RemoteJoinRequest[] }> {
     const retryable: RemoteJoinRequest[] = [];
+    const failures: string[] = [];
     for (const request of requests) {
       try {
         // Prefer the exact package named by this request. A stable Nostr
@@ -613,6 +621,10 @@ export class ChatRoomSession {
         const consumed = await client.consumeKeyPackage(request.kp_ref)
           ?? await client.consumeKeyPackage(request.pk);
         if (!consumed) {
+          // The coordinator no longer holds admission material for this
+          // request. Retrying alone never recovers it; the guest has to
+          // republish, so say so rather than looping in silence.
+          failures.push("the invitee's key package is no longer on the coordinator");
           retryable.push(request);
           continue;
         }
@@ -624,6 +636,7 @@ export class ChatRoomSession {
           ?? published.params?.arguments?.keyPackageBase64;
         if (!keyPackageBase64) {
           console.warn("Cordn join request contained no published key package", request.pk);
+          failures.push("the invitee's publication did not carry a key package");
           continue;
         }
         const added = await addMember(decodeState(this.room.stateBase64), keyPackageBase64);
@@ -652,10 +665,15 @@ export class ChatRoomSession {
         // A malformed or stale remote request must not take the hosted room
         // offline. Requests that failed before consumption can be retried.
         console.warn("Could not admit Cordn join request", request.pk, error);
+        failures.push(error instanceof Error ? error.message : "admission failed");
         retryable.push(request);
       }
     }
-    return { accepted: await this.flushPendingWelcomes(client), retryable };
+    const accepted = await this.flushPendingWelcomes(client);
+    this.admissionError = failures.length > 0
+      ? `Could not admit ${failures.length} ${failures.length === 1 ? "invitee" : "invitees"}: ${failures[0]}`
+      : null;
+    return { accepted, retryable };
   }
 
   private async flushPendingWelcomes(client: ChatCoordinatorOperations): Promise<RemoteJoinRequest[]> {
@@ -759,6 +777,31 @@ export class ChatRoomSession {
     await client.storeJoinRequest(this.room.id, keyPackage.reference, this.room.inviteToken);
     this.room.keyPackage = keyPackage;
     this.persist();
+  }
+
+  /**
+   * A pending invite is only admissible while the coordinator still holds the
+   * KeyPackage the join request names. That material can disappear underneath a
+   * waiting guest — a replacement publication evicts the previous last-resort
+   * package, and a coordinator can restart into a fresh or temporary store.
+   * Nothing else republishes it, because the legacy upgrade deliberately skips
+   * rooms that already hold a last-resort package, so the host would consume
+   * nothing, retry silently, and strand the invite forever. Restore it in place
+   * instead: republishing is idempotent because the reference and bytes are
+   * unchanged.
+   */
+  private async restoreMissingKeyPackage(client: ChatCoordinatorOperations): Promise<void> {
+    if (this.room.isHost || !this.room.joinRequestSent) return;
+    let published: string[];
+    try {
+      published = await client.listOwnKeyPackageRefs();
+    } catch {
+      // Never fail an otherwise healthy wait on an optional recovery probe.
+      return;
+    }
+    if (published.includes(this.room.keyPackage.reference)) return;
+    await client.publishKeyPackage(this.room.keyPackage.reference, this.room.keyPackage.publicBase64);
+    await client.storeJoinRequest(this.room.id, this.room.keyPackage.reference, this.room.inviteToken);
   }
 
   private async flushPending(client: ChatCoordinatorOperations): Promise<void> {

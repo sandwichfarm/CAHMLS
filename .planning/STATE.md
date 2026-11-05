@@ -32,6 +32,7 @@ Plan: 3 of 3
 Status: Phase 18 shipped — PR #8
 Last activity: 2026-08-06
 Pull request: [#7 — maximize room QR codes](https://github.com/sandwichfarm/CAHMLS/pull/7) — open, CI in progress. [#6](https://github.com/sandwichfarm/CAHMLS/pull/6) merged 2026-08-06.
+README refresh: [#16 — rewrite README for CAHMLS](https://github.com/sandwichfarm/CAHMLS/pull/16) — opened 2026-11-04, outside phase scope.
 
 Progress: [██████████░░░░░░░░░░] 3/6 phases ([█████████░] 93%)
 
