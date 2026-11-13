@@ -46,11 +46,8 @@ import {
   subscribeManyGroupMessagesOutputSchema,
   subscribeGroupMessagesInputSchema,
   subscribeGroupMessagesOutputSchema,
-  type ConsumeKeyPackageOutput,
   type FetchManyGroupMessagesOutput,
-  type FetchManyPendingJoinRequestsOutput,
   type FetchGroupMessagesOutput,
-  type FetchPendingJoinRequestsOutput,
   type FetchPendingWelcomesOutput,
   type ListAvailableKeyPackagesOutput,
   type PostGroupMessageOutput,
@@ -58,8 +55,6 @@ import {
   type RemoveKeyPackagesOutput,
   type StoreJoinRequestOutput,
   type StoreWelcomeOutput,
-  type SubscribeManyGroupMessagesOutput,
-  type SubscribeGroupMessagesOutput,
 } from "../contracts/index.js";
 import { decodeExact, decodeWelcome, encodeWelcome } from "../mls/mlsCodec.js";
 import { assertNonEmptyBase64, encodeBase64 } from "./base64.js";
@@ -441,7 +436,18 @@ export class CoordinatorAdapter {
     };
   }
 
-  consumeKeyPackage(input: z.infer<typeof consumeKeyPackageInputSchema>): { content: never[]; structuredContent: ConsumeKeyPackageOutput } {
+  consumeKeyPackage(input: z.infer<typeof consumeKeyPackageInputSchema>): {
+    content: never[];
+    structuredContent: {
+      keyPackage: {
+        pk: string;
+        kp_ref: string;
+        last_resort: boolean;
+        at: number;
+        event: NostrEvent;
+      } | null;
+    };
+  } {
     // no extra available here; enforced in registration wrapper
     const record = this.coordinator.consumeKeyPackage(input.id);
 
@@ -589,7 +595,17 @@ export class CoordinatorAdapter {
 
   fetchPendingJoinRequests(
     input: z.infer<typeof fetchPendingJoinRequestsInputSchema>,
-  ): { content: never[]; structuredContent: FetchPendingJoinRequestsOutput } {
+  ): {
+    content: never[];
+    structuredContent: {
+      requests: {
+        pk: string;
+        kp_ref: string;
+        at: number;
+        invite_token: string | undefined;
+      }[];
+    };
+  } {
     // no extra available here; enforced in registration wrapper
     const records = this.coordinator.fetchPendingJoinRequests(input.gid);
 
@@ -610,7 +626,18 @@ export class CoordinatorAdapter {
 
   fetchManyPendingJoinRequests(
     input: z.infer<typeof fetchManyPendingJoinRequestsInputSchema>,
-  ): { content: never[]; structuredContent: FetchManyPendingJoinRequestsOutput } {
+  ): {
+    content: never[];
+    structuredContent: {
+      requests: {
+        gid: string;
+        pk: string;
+        kp_ref: string;
+        at: number;
+        invite_token: string | undefined;
+      }[];
+    };
+  } {
     // no extra available here; enforced in registration wrapper
     const records = this.coordinator.fetchManyPendingJoinRequests({
       groups: input.groups.map((group) => ({ groupId: group.gid })),
@@ -721,7 +748,10 @@ export class CoordinatorAdapter {
   async subscribeGroupMessages(
     input: z.infer<typeof subscribeGroupMessagesInputSchema>,
     extra: ToolExtra,
-  ): Promise<{ content: never[]; structuredContent: SubscribeGroupMessagesOutput }> {
+  ): Promise<{
+    content: never[];
+    structuredContent: { subscribed: boolean };
+  }> {
     const stream = getOpenStreamWriter(extra);
     const clientPubkey = extra._meta?.clientPubkey;
     const groupId = input.gid;
@@ -852,7 +882,10 @@ export class CoordinatorAdapter {
   async subscribeManyGroupMessages(
     input: z.infer<typeof subscribeManyGroupMessagesInputSchema>,
     extra: ToolExtra,
-  ): Promise<{ content: never[]; structuredContent: SubscribeManyGroupMessagesOutput }> {
+  ): Promise<{
+    content: never[];
+    structuredContent: { subscribed: boolean; groups: string[] };
+  }> {
     const stream = getOpenStreamWriter(extra);
     const clientPubkey = extra._meta?.clientPubkey;
     const clientPubkeyLabel =

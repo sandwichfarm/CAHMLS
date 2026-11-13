@@ -243,9 +243,10 @@ Plans:
   3. A trusted default-branch push with successful CI triggers OIDC publication of that tested commit; pull requests cannot publish.
   4. Contributors can follow documented installation and release instructions.
 
-**Plans**: 1 plan
+**Plans**: 2 plans
 
 - [ ] 25-01-PLAN.md — Configure the JSR source package, validate it in CI, and publish from a trusted workflow.
+- [ ] 25-02-PLAN.md — Preserve exact public return types and keep upstream verification compatible with annotations.
 
 **UI hint**: no
 
@@ -263,4 +264,4 @@ Plans:
 | 22. Coordinator-Grouped Sidebar | 2/2 | Complete | 2026-08-06 |
 | 23. Bounded Gift-Wrap Delivery | 2/2 | Complete | 2026-08-06 |
 | 24. SDK Extraction | 1/1 | Complete | 2026-11-05 |
-| 25. JSR SDK Publication | 0/1 | In progress | - |
+| 25. JSR SDK Publication | 0/2 | In progress | - |
