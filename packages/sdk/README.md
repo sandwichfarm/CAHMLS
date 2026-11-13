@@ -53,7 +53,8 @@ The full guide and API reference live in [`docs/`](https://github.com/sandwichfa
 pnpm --filter @cahmls/sdk test           # tests
 pnpm --filter @cahmls/sdk test:coverage  # tests with enforced coverage thresholds
 pnpm sdk:verify-package                  # build, then load every published entry point
-pnpm --dir packages/sdk dlx jsr@0.14.3 publish --dry-run
+cd packages/sdk
+pnpm dlx jsr@0.14.3 publish --dry-run
 ```
 
 ## Releases

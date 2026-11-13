@@ -35,7 +35,7 @@ export const COORDINATOR_METHODS = {
   subscribeManyGroupMessages: "msg_sub_many",
 } as const;
 
-export const emptyInputSchema: z.ZodObject<{}, z.core.$strip> = z.object({});
+export const emptyInputSchema: z.ZodObject<Record<never, never>, z.core.$strip> = z.object({});
 
 export const publishKeyPackageInputSchema: z.ZodObject<{
   kp_ref: z.ZodString;
