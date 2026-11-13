@@ -246,7 +246,7 @@ Plans:
 **Plans**: 2 plans
 
 - [ ] 25-01-PLAN.md — Configure the JSR source package, validate it in CI, and publish from a trusted workflow.
-- [ ] 25-02-PLAN.md — Preserve exact public return types and keep upstream verification compatible with annotations.
+- [x] 25-02-PLAN.md — Preserve exact public return types and keep upstream verification compatible with annotations.
 
 **UI hint**: no
 
@@ -264,4 +264,4 @@ Plans:
 | 22. Coordinator-Grouped Sidebar | 2/2 | Complete | 2026-08-06 |
 | 23. Bounded Gift-Wrap Delivery | 2/2 | Complete | 2026-08-06 |
 | 24. SDK Extraction | 1/1 | Complete | 2026-11-05 |
-| 25. JSR SDK Publication | 0/2 | In progress | - |
+| 25. JSR SDK Publication | 1/2 | Awaiting CI and publication | - |

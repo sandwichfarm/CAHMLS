@@ -104,9 +104,9 @@
 ### JSR SDK Publication
 
 - [ ] **JSR-01**: The SDK is a valid source package named `@sandwich/cahmls` on JSR, preserving every public SDK code entry point and matching the workspace SDK version.
-- [ ] **JSR-02**: CI validates JSR publication with a dry run before a change can be released.
+- [x] **JSR-02**: CI validates JSR publication with a dry run before a change can be released.
 - [ ] **JSR-03**: A GitHub Actions workflow publishes the exact commit that passed CI on a trusted default-branch push using OIDC, without a publishing secret or publication from pull requests.
-- [ ] **JSR-04**: SDK documentation explains JSR installation, repository linking, version updates, and the CI release process.
+- [x] **JSR-04**: SDK documentation explains JSR installation, repository linking, version updates, and the CI release process.
 
 ## Future Requirements
 
@@ -191,9 +191,9 @@
 | SDK-06 | Phase 24 | Complete |
 | SDK-07 | Phase 24 | Complete |
 | JSR-01 | Phase 25 | Pending |
-| JSR-02 | Phase 25 | Pending |
+| JSR-02 | Phase 25 | Complete |
 | JSR-03 | Phase 25 | Pending |
-| JSR-04 | Phase 25 | Pending |
+| JSR-04 | Phase 25 | Complete |
 
 **Coverage:**
 
