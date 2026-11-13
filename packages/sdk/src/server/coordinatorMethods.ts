@@ -46,6 +46,20 @@ import {
   subscribeManyGroupMessagesOutputSchema,
   subscribeGroupMessagesInputSchema,
   subscribeGroupMessagesOutputSchema,
+  type ConsumeKeyPackageOutput,
+  type FetchManyGroupMessagesOutput,
+  type FetchManyPendingJoinRequestsOutput,
+  type FetchGroupMessagesOutput,
+  type FetchPendingJoinRequestsOutput,
+  type FetchPendingWelcomesOutput,
+  type ListAvailableKeyPackagesOutput,
+  type PostGroupMessageOutput,
+  type PublishKeyPackageOutput,
+  type RemoveKeyPackagesOutput,
+  type StoreJoinRequestOutput,
+  type StoreWelcomeOutput,
+  type SubscribeManyGroupMessagesOutput,
+  type SubscribeGroupMessagesOutput,
 } from "../contracts/index.js";
 import { decodeExact, decodeWelcome, encodeWelcome } from "../mls/mlsCodec.js";
 import { assertNonEmptyBase64, encodeBase64 } from "./base64.js";
@@ -389,7 +403,7 @@ export class CoordinatorAdapter {
   async publishKeyPackage(
     input: z.infer<typeof publishKeyPackageInputSchema>,
     extra: ToolExtra,
-  ) {
+  ): Promise<{ content: never[]; structuredContent: PublishKeyPackageOutput }> {
     const clientPubkey = requireClientPubkey(extra);
     const keyPackage = decodeKeyPackageBase64(input.kp_64);
     const requestEventId = getRequestEventId(extra);
@@ -427,7 +441,7 @@ export class CoordinatorAdapter {
     };
   }
 
-  consumeKeyPackage(input: z.infer<typeof consumeKeyPackageInputSchema>) {
+  consumeKeyPackage(input: z.infer<typeof consumeKeyPackageInputSchema>): { content: never[]; structuredContent: ConsumeKeyPackageOutput } {
     // no extra available here; enforced in registration wrapper
     const record = this.coordinator.consumeKeyPackage(input.id);
 
@@ -451,7 +465,7 @@ export class CoordinatorAdapter {
 
   listAvailableKeyPackages(
     _input: z.infer<typeof listAvailableKeyPackagesInputSchema>,
-  ) {
+  ): { content: never[]; structuredContent: ListAvailableKeyPackagesOutput } {
     // no extra available here; enforced in registration wrapper
     void _input;
     const records = this.coordinator.listAllKeyPackages();
@@ -467,7 +481,7 @@ export class CoordinatorAdapter {
   removeKeyPackages(
     input: z.infer<typeof removeKeyPackagesInputSchema>,
     extra: ToolExtra,
-  ) {
+  ): { content: never[]; structuredContent: RemoveKeyPackagesOutput } {
     const clientPubkey = requireClientPubkey(extra);
     const records = input.kp_refs.map((kp_ref) => {
       const record = this.coordinator.getKeyPackage(kp_ref);
@@ -500,7 +514,7 @@ export class CoordinatorAdapter {
   fetchPendingWelcomes(
     input: z.infer<typeof fetchPendingWelcomesInputSchema>,
     extra: ToolExtra,
-  ) {
+  ): { content: never[]; structuredContent: FetchPendingWelcomesOutput } {
     const clientPubkey = requireClientPubkey(extra);
     const records = this.coordinator.fetchPendingWelcomes(
       clientPubkey,
@@ -522,7 +536,7 @@ export class CoordinatorAdapter {
     };
   }
 
-  storeWelcome(input: z.infer<typeof storeWelcomeInputSchema>) {
+  storeWelcome(input: z.infer<typeof storeWelcomeInputSchema>): { content: never[]; structuredContent: StoreWelcomeOutput } {
     // no extra available here; enforced in registration wrapper
     const record = this.coordinator.storeWelcome({
       targetStablePubkey: input.target_pk,
@@ -544,7 +558,7 @@ export class CoordinatorAdapter {
   async storeJoinRequest(
     input: z.infer<typeof storeJoinRequestInputSchema>,
     extra: ToolExtra,
-  ) {
+  ): Promise<{ content: never[]; structuredContent: StoreJoinRequestOutput }> {
     const clientPubkey = requireClientPubkey(extra);
 
     const keyPackageRecord = this.coordinator.getKeyPackage(input.kp_ref);
@@ -575,7 +589,7 @@ export class CoordinatorAdapter {
 
   fetchPendingJoinRequests(
     input: z.infer<typeof fetchPendingJoinRequestsInputSchema>,
-  ) {
+  ): { content: never[]; structuredContent: FetchPendingJoinRequestsOutput } {
     // no extra available here; enforced in registration wrapper
     const records = this.coordinator.fetchPendingJoinRequests(input.gid);
 
@@ -596,7 +610,7 @@ export class CoordinatorAdapter {
 
   fetchManyPendingJoinRequests(
     input: z.infer<typeof fetchManyPendingJoinRequestsInputSchema>,
-  ) {
+  ): { content: never[]; structuredContent: FetchManyPendingJoinRequestsOutput } {
     // no extra available here; enforced in registration wrapper
     const records = this.coordinator.fetchManyPendingJoinRequests({
       groups: input.groups.map((group) => ({ groupId: group.gid })),
@@ -626,7 +640,7 @@ export class CoordinatorAdapter {
   postGroupMessage(
     input: z.infer<typeof postGroupMessageInputSchema>,
     extra: ToolExtra,
-  ) {
+  ): { content: never[]; structuredContent: PostGroupMessageOutput } {
     const clientPubkey = requireClientPubkey(extra);
 
     try {
@@ -665,7 +679,7 @@ export class CoordinatorAdapter {
     }
   }
 
-  fetchGroupMessages(input: z.infer<typeof fetchGroupMessagesInputSchema>) {
+  fetchGroupMessages(input: z.infer<typeof fetchGroupMessagesInputSchema>): { content: never[]; structuredContent: FetchGroupMessagesOutput } {
     // no extra available here; enforced in registration wrapper
     const records = this.coordinator.fetchGroupMessages({
       groupId: input.gid,
@@ -685,7 +699,7 @@ export class CoordinatorAdapter {
 
   fetchManyGroupMessages(
     input: z.infer<typeof fetchManyGroupMessagesInputSchema>,
-  ) {
+  ): { content: never[]; structuredContent: FetchManyGroupMessagesOutput } {
     const records = this.coordinator.fetchManyGroupMessages({
       groups: input.groups.map((group) => ({
         groupId: group.gid,
@@ -707,7 +721,7 @@ export class CoordinatorAdapter {
   async subscribeGroupMessages(
     input: z.infer<typeof subscribeGroupMessagesInputSchema>,
     extra: ToolExtra,
-  ) {
+  ): Promise<{ content: never[]; structuredContent: SubscribeGroupMessagesOutput }> {
     const stream = getOpenStreamWriter(extra);
     const clientPubkey = extra._meta?.clientPubkey;
     const groupId = input.gid;
@@ -838,7 +852,7 @@ export class CoordinatorAdapter {
   async subscribeManyGroupMessages(
     input: z.infer<typeof subscribeManyGroupMessagesInputSchema>,
     extra: ToolExtra,
-  ) {
+  ): Promise<{ content: never[]; structuredContent: SubscribeManyGroupMessagesOutput }> {
     const stream = getOpenStreamWriter(extra);
     const clientPubkey = extra._meta?.clientPubkey;
     const clientPubkeyLabel =

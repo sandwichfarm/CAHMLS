@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+const jsrManifest = JSON.parse(readFileSync(join(root, "jsr.json"), "utf8"));
 
 const expectedExports = {
   ".": ["CoordinatorRuntime", "ChatRoomSession", "transportFactory", "contracts", "mls"],
@@ -25,8 +26,37 @@ const expectedExports = {
 const failures = [];
 const fail = (message) => failures.push(message);
 
-for (const [subpath, target] of Object.entries(manifest.exports)) {
-  if (subpath === "./package.json") continue;
+const runtimeExports = Object.fromEntries(
+  Object.entries(manifest.exports).filter(([subpath]) => subpath !== "./package.json"),
+);
+const jsrSourceFor = (target) => target.default
+  .replace(/^\.\/dist\//, "./src/")
+  .replace(/\.js$/, ".ts");
+
+if (jsrManifest.name !== "@sandwich/cahmls") {
+  fail(`JSR package name must be @sandwich/cahmls, received ${jsrManifest.name}`);
+}
+if (jsrManifest.version !== manifest.version) {
+  fail(`JSR version ${jsrManifest.version} does not match package version ${manifest.version}`);
+}
+
+const runtimeExportPaths = Object.keys(runtimeExports).sort();
+const jsrExportPaths = Object.keys(jsrManifest.exports ?? {}).sort();
+if (JSON.stringify(jsrExportPaths) !== JSON.stringify(runtimeExportPaths)) {
+  fail(`JSR exports do not match runtime exports: ${JSON.stringify(jsrExportPaths)}`);
+}
+for (const [subpath, target] of Object.entries(runtimeExports)) {
+  const expectedSource = jsrSourceFor(target);
+  const actualSource = jsrManifest.exports?.[subpath];
+  if (actualSource !== expectedSource) {
+    fail(`${subpath} must map to ${expectedSource} in jsr.json, received ${actualSource}`);
+  }
+  if (!existsSync(join(root, actualSource ?? ""))) {
+    fail(`${subpath} points at missing JSR source ${actualSource}`);
+  }
+}
+
+for (const [subpath, target] of Object.entries(runtimeExports)) {
   if (!expectedExports[subpath]) fail(`no verification listed for export ${subpath}`);
   for (const file of Object.values(target)) {
     if (!existsSync(join(root, file))) fail(`${subpath} points at missing file ${file}`);
@@ -71,4 +101,4 @@ if (failures.length > 0) {
   console.error(failures.map((failure) => `- ${failure}`).join("\n"));
   process.exit(1);
 }
-console.log(`Verified ${Object.keys(expectedExports).length} entry points and ${packed.length} packed files.`);
+console.log(`Verified ${Object.keys(expectedExports).length} entry points, JSR source exports, and ${packed.length} packed files.`);

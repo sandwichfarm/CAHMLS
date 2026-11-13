@@ -197,4 +197,4 @@ export class KeyStorage {
   }
 }
 
-export const keyStorage = new KeyStorage();
+export const keyStorage: KeyStorage = new KeyStorage();

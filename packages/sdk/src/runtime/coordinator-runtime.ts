@@ -12,7 +12,7 @@ import {
   createBrowserCoordinatorStorage,
 } from "../coordinator/storage/browserSqliteStorage.js";
 import type { CoordinatorStorage } from "../coordinator/storage/storage.js";
-import { KeyManager } from "../crypto/key-manager.js";
+import { KeyManager, type CoordinatorIdentity } from "../crypto/key-manager.js";
 import {
   keyStorage as defaultKeyStorage,
   WrongPassphraseError,
@@ -347,20 +347,20 @@ export class CoordinatorRuntime {
     for (const listener of this.listeners) listener();
   }
 
-  get keyManager() { return this.state.keyManager; }
-  get loadState() { return this.state.loadState; }
-  get status() { return this.state.status; }
-  get error() { return this.state.error; }
-  get passphraseError() { return this.state.passphraseError; }
-  get persistenceError() { return this.state.persistenceError; }
-  get persistenceEnabled() { return this.state.persistenceEnabled; }
-  get relayStatuses() { return this.state.relayStatuses; }
-  get debugLog() { return this.state.debugLog; }
-  get profilePublicationState() { return this.state.profilePublicationState; }
-  get startupProgress() { return this.state.startupProgress; }
-  get appliedConfigRevision() { return this.state.appliedConfigRevision; }
+  get keyManager(): KeyManager | null { return this.state.keyManager; }
+  get loadState(): CoordinatorLoadState { return this.state.loadState; }
+  get status(): CoordinatorStatus { return this.state.status; }
+  get error(): string | null { return this.state.error; }
+  get passphraseError(): string | null { return this.state.passphraseError; }
+  get persistenceError(): string | null { return this.state.persistenceError; }
+  get persistenceEnabled(): boolean { return this.state.persistenceEnabled; }
+  get relayStatuses(): Readonly<Record<string, RelayConnectionStatus>> { return this.state.relayStatuses; }
+  get debugLog(): readonly DebugLogEntry[] { return this.state.debugLog; }
+  get profilePublicationState(): CoordinatorProfilePublicationState { return this.state.profilePublicationState; }
+  get startupProgress(): CoordinatorStartupProgress { return this.state.startupProgress; }
+  get appliedConfigRevision(): number | null { return this.state.appliedConfigRevision; }
 
-  get identity() {
+  get identity(): CoordinatorIdentity {
     return this.requireKeyManager().identity;
   }
 
