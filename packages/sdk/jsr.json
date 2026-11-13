@@ -1,0 +1,26 @@
+{
+  "name": "@sandwich/cahmls",
+  "version": "0.1.0",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client/index.ts",
+    "./contracts": "./src/contracts/index.ts",
+    "./coordinator": "./src/coordinator/index.ts",
+    "./crypto": "./src/crypto/index.ts",
+    "./mls": "./src/mls/index.ts",
+    "./relay": "./src/relay/index.ts",
+    "./runtime": "./src/runtime/index.ts",
+    "./server": "./src/server/index.ts",
+    "./storage/browser": "./src/storage-browser.ts"
+  },
+  "publish": {
+    "include": [
+      "src/**/*.ts",
+      "README.md",
+      "LICENSE",
+      "package.json",
+      "jsr.json"
+    ]
+  }
+}

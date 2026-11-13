@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Quality of Life & Polish
-current_phase: 18
-current_phase_name: Unified Presence, Notifications & Controls
-status: "Phase 18 shipped — PR #8"
-stopped_at: Completed 18-02-PLAN.md
-last_updated: "2026-08-06T15:03:51.570Z"
-last_activity: 2026-08-06
+current_phase: 25
+current_phase_name: JSR SDK Publication
+status: "Phase 25 draft PR #19 — MIT selected, awaiting CI and publication"
+stopped_at: Phase 25 implementation and MIT license pushed; JSR dry run passes
+last_updated: "2026-11-13T10:12:24Z"
+last_activity: 2026-11-13
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 25
   completed_plans: 24
-last_activity_desc: Phase 18 execution started
+last_activity_desc: JSR publication workflow and source package prepared in draft PR 19
 ---
 
 # Project State
@@ -23,17 +23,18 @@ last_activity_desc: Phase 18 execution started
 See: .planning/PROJECT.md (updated 2026-08-02)
 
 **Core value:** A single browser tab acts as a fully functional, self-sovereign Cordn coordinator reachable over Nostr relays — no backend, no account, no installation.
-**Current focus:** Phase 18 — Unified Presence, Notifications & Controls
+**Current focus:** Phase 25 — JSR SDK Publication
 
 ## Current Position
 
-Phase: 18 (Unified Presence, Notifications & Controls) — EXECUTING
-Plan: 3 of 3
-Status: Phase 18 shipped — PR #8
-Last activity: 2026-08-06
+Phase: 25 (JSR SDK Publication) — VERIFYING
+Plan: 25-02 verified; 25-01 awaits green CI and publication
+Status: Draft PR #19; no JSR version published
+Last activity: 2026-11-13
 Pull request: [#7 — maximize room QR codes](https://github.com/sandwichfarm/CAHMLS/pull/7) — open, CI in progress. [#6](https://github.com/sandwichfarm/CAHMLS/pull/6) merged 2026-08-06.
 README refresh: [#16 — rewrite README for CAHMLS](https://github.com/sandwichfarm/CAHMLS/pull/16) — merged, outside phase scope.
 SDK extraction: Phase 24 — [#17 — extract coordinator and client into @cahmls/sdk](https://github.com/sandwichfarm/CAHMLS/pull/17) — opened 2026-11-05. Deferred: [#18](https://github.com/sandwichfarm/CAHMLS/issues/18).
+JSR publication: Phase 25 — [#19 — publish @sandwich/cahmls to JSR after verified CI](https://github.com/sandwichfarm/CAHMLS/pull/19) — draft on `ci/publish-sdk-jsr`. Source package and OIDC workflow are implemented. The owner selected MIT, added in `4de94bd`; the JSR dry run now passes. The JSR package exists and is linked to this repository, but has zero versions. Work is isolated in `/tmp/cahmls-jsr-ci`; the original checkout's `package.json` change is preserved. Activation requires a green CI run and default-branch merge; merging is not authorized yet under `GIT-PROCEDURES.md`.
 
 Progress: [██████████░░░░░░░░░░] 3/6 phases ([█████████░] 93%)
 
@@ -104,6 +105,8 @@ None yet.
 
 ### Blockers/Concerns
 
+- Phase 25: MIT license choice is resolved in `4de94bd`; await green PR CI, merge authorization, and real registry publication evidence. Latest source fixes: `3112ab1`.
+- Phase 25: full browser rerun had 98 passes and two 30-second timeouts; both tests passed in a focused rerun. The initial full browser run passed all 100 tests. See phase verification for precise evidence.
 - Production nsite publication requires repository secrets. The deploy workflow currently succeeds as a guarded skip.
 - Authoritative active user count is not yet derived from real Cordn group membership.
 
@@ -131,6 +134,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-03T06:19:49.123Z
-Stopped at: Completed 18-02-PLAN.md
+Last session: 2026-11-13T10:12:24Z
+Stopped at: Phase 25 draft PR #19; MIT selected, await green CI and authorized merge/publication
 Resume file: None

@@ -1,6 +1,7 @@
 {
   "name": "@cahmls/sdk",
   "version": "0.1.0",
+  "license": "MIT",
   "description": "Browser-first SDK for running and talking to Cordn MLS coordinators over Nostr and ContextVM.",
   "type": "module",
   "sideEffects": false,
@@ -9,6 +10,7 @@
   },
   "files": [
     "dist",
+    "LICENSE",
     "README.md"
   ],
   "types": "./dist/index.d.ts",

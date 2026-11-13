@@ -101,6 +101,13 @@
 - [x] **SDK-06**: The web application has no regressions: its unit, browser, build, and upstream interoperability checks pass after the extraction.
 - [x] **SDK-07**: Defects found during extraction are fixed with regression tests.
 
+### JSR SDK Publication
+
+- [ ] **JSR-01**: The SDK is a valid source package named `@sandwich/cahmls` on JSR, preserving every public SDK code entry point and matching the workspace SDK version.
+- [x] **JSR-02**: CI validates JSR publication with a dry run before a change can be released.
+- [ ] **JSR-03**: A GitHub Actions workflow publishes the exact commit that passed CI on a trusted default-branch push using OIDC, without a publishing secret or publication from pull requests.
+- [x] **JSR-04**: SDK documentation explains JSR installation, repository linking, version updates, and the CI release process.
+
 ## Future Requirements
 
 ### Notification Expansion
@@ -183,13 +190,17 @@
 | SDK-05 | Phase 24 | Complete |
 | SDK-06 | Phase 24 | Complete |
 | SDK-07 | Phase 24 | Complete |
+| JSR-01 | Phase 25 | Pending |
+| JSR-02 | Phase 25 | Complete |
+| JSR-03 | Phase 25 | Pending |
+| JSR-04 | Phase 25 | Complete |
 
 **Coverage:**
 
-- v1.1 requirements: 54 total
-- Mapped to phases: 54
-- Unmapped: 0 ✓
+- v1.1 requirements: 64 total
+- Mapped to phases: 62
+- Unmapped: 2 pre-existing entries (`NOTF-06`, `SHELL-03`); all Phase 25 requirements are mapped.
 
 ---
 *Requirements defined: 2026-08-02*
-*Last updated: 2026-11-05 after adding the SDK extraction scope*
+*Last updated: 2026-11-13 after adding CI-based JSR SDK publication*

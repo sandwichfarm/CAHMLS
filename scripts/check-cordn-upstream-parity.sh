@@ -41,7 +41,7 @@ function methodMap(source, label) {
 
 function schemaKeys(source, name, label) {
   const body = source.match(
-    new RegExp(`export const ${name} = z\\.object\\(\\{([\\s\\S]*?)\\n\\}\\);`),
+    new RegExp(`export const ${name}(?:\\s*:[\\s\\S]*?)?\\s*= z\\.object\\(\\{([\\s\\S]*?)\\n\\}\\);`),
   )?.[1];
   if (body === undefined) throw new Error(`Could not find ${label} ${name}`);
   return [...body.matchAll(/^\s*([A-Za-z0-9_]+):/gm)].map((match) => match[1]);

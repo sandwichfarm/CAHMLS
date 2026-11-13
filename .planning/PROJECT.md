@@ -28,6 +28,8 @@ A single browser tab acts as a fully functional, self-sovereign Cordn coordinato
 
 ### Active
 
+- [ ] Publish the framework-free SDK as `@sandwich/cahmls` on JSR through a GitHub Actions workflow after successful CI (Phase 25).
+
 - [ ] Room navigation exposes contextual leave actions and per-room unread counts
 - [ ] Coordinator startup recovers prior rooms as visible progress without transient false errors
 - [ ] Startup visuals fill the viewport and use GSAP-driven ASCII-masked motion with reduced-motion support

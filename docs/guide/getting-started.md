@@ -1,6 +1,6 @@
 # Getting started
 
-`@cahmls/sdk` is the coordinator and client code behind the [CAHMLS](https://github.com/sandwichfarm/CAHMLS) web application, packaged without any UI framework. Use it to:
+`@sandwich/cahmls` is the JSR package name for the coordinator and client code behind the [CAHMLS](https://github.com/sandwichfarm/CAHMLS) web application, packaged without any UI framework. Use it to:
 
 - host a [Cordn](https://github.com/Cordn-msg/cordn) MLS coordinator reachable over Nostr relays;
 - create, join, and exchange encrypted messages in rooms on any Cordn-compatible coordinator;
@@ -13,7 +13,15 @@
 
 ## Installation
 
-The package is developed in this repository and is not yet published to a registry. Inside the workspace, depend on it directly:
+Install from JSR:
+
+```bash
+pnpm dlx jsr add @sandwich/cahmls
+```
+
+For Deno, use `deno add jsr:@sandwich/cahmls`. The package and its subpath API are the same as the internal `@cahmls/sdk` workspace package. Other guides and the generated API reference use that workspace name; substitute `@sandwich/cahmls` in imports when using the JSR installation.
+
+Inside this repository's workspace, depend on it directly:
 
 ```json
 {
@@ -23,15 +31,15 @@ The package is developed in this repository and is not yet published to a regist
 }
 ```
 
-To use it elsewhere, build a tarball with `pnpm --filter @cahmls/sdk pack` and install that file.
+Releases are published by GitHub Actions after successful default-branch CI. See the [SDK release instructions](https://github.com/sandwichfarm/CAHMLS/tree/master/packages/sdk#releases) for registry setup and version updates.
 
 ## Choose an entry point
 
-Import from the narrowest [entry point](/api/) you need. `@cahmls/sdk/client` does not load the coordinator or SQLite.
+Import from the narrowest [entry point](/api/) you need. `@sandwich/cahmls/client` does not load the coordinator or SQLite.
 
 ```ts
-import { ChatRoomSession, createHostedRoom } from "@cahmls/sdk/client";
-import { transportFactory } from "@cahmls/sdk/server";
+import { ChatRoomSession, createHostedRoom } from "@sandwich/cahmls/client";
+import { transportFactory } from "@sandwich/cahmls/server";
 ```
 
 ## Host a coordinator and a room
@@ -44,9 +52,9 @@ import {
   LocalHostCoordinatorClient,
   createHostedRoom,
   createInviteUrl,
-} from "@cahmls/sdk/client";
-import { BrowserNostrSigner, KeyManager } from "@cahmls/sdk/crypto";
-import { transportFactory } from "@cahmls/sdk/server";
+} from "@sandwich/cahmls/client";
+import { BrowserNostrSigner, KeyManager } from "@sandwich/cahmls/crypto";
+import { transportFactory } from "@sandwich/cahmls/server";
 
 const relays = ["wss://relay.example"];
 const coordinatorKey = KeyManager.generate();
@@ -87,8 +95,8 @@ console.log(createInviteUrl(location.origin, {
 ## Join a room and send a message
 
 ```ts
-import { ChatRoomSession, createJoiningRoom, parseInviteUrl } from "@cahmls/sdk/client";
-import { BrowserNostrSigner, KeyManager } from "@cahmls/sdk/crypto";
+import { ChatRoomSession, createJoiningRoom, parseInviteUrl } from "@sandwich/cahmls/client";
+import { BrowserNostrSigner, KeyManager } from "@sandwich/cahmls/crypto";
 
 const invite = parseInviteUrl(inviteLink);
 if (!invite) throw new Error("Not a valid invite");

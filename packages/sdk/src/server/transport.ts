@@ -473,4 +473,4 @@ function abbreviateHex(value: string): string {
   return `${value.slice(0, 8)}...${value.slice(-8)}`;
 }
 
-export const transportFactory = new TransportFactory();
+export const transportFactory: TransportFactory = new TransportFactory();

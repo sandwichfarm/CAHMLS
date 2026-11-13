@@ -231,6 +231,25 @@ Plans:
 
 **UI hint**: no
 
+### Phase 25: JSR SDK Publication
+
+**Goal**: Publish the SDK as `@sandwich/cahmls` through GitHub Actions after the exact release commit passes CI.
+**Depends on**: Phase 24
+**Requirements**: JSR-01, JSR-02, JSR-03, JSR-04
+**Success Criteria** (what must be TRUE):
+
+  1. The JSR source manifest preserves all public code entry points and matches the SDK version.
+  2. CI runs a real JSR publish dry run and catches invalid packages before publishing.
+  3. A trusted default-branch push with successful CI triggers OIDC publication of that tested commit; pull requests cannot publish.
+  4. Contributors can follow documented installation and release instructions.
+
+**Plans**: 2 plans
+
+- [ ] 25-01-PLAN.md — Configure the JSR source package, validate it in CI, and publish from a trusted workflow.
+- [x] 25-02-PLAN.md — Preserve exact public return types and keep upstream verification compatible with annotations.
+
+**UI hint**: no
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -245,3 +264,4 @@ Plans:
 | 22. Coordinator-Grouped Sidebar | 2/2 | Complete | 2026-08-06 |
 | 23. Bounded Gift-Wrap Delivery | 2/2 | Complete | 2026-08-06 |
 | 24. SDK Extraction | 1/1 | Complete | 2026-11-05 |
+| 25. JSR SDK Publication | 1/2 | Awaiting CI and publication | - |

@@ -59,7 +59,7 @@ function encodeAdminPubkeys(values: string[] = []): Uint8Array {
   return concatBytes(...normalized.map(hexToBytes));
 }
 
-export function createCordnMetadataCapabilities() {
+export function createCordnMetadataCapabilities(): ReturnType<typeof defaultCapabilities> {
   const capabilities = defaultCapabilities();
   if (!capabilities.extensions.includes(CORDN_GROUP_METADATA_EXTENSION_TYPE)) {
     capabilities.extensions = [
