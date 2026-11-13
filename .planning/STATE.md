@@ -34,6 +34,7 @@ Last activity: 2026-08-06
 Pull request: [#7 — maximize room QR codes](https://github.com/sandwichfarm/CAHMLS/pull/7) — open, CI in progress. [#6](https://github.com/sandwichfarm/CAHMLS/pull/6) merged 2026-08-06.
 README refresh: [#16 — rewrite README for CAHMLS](https://github.com/sandwichfarm/CAHMLS/pull/16) — merged, outside phase scope.
 SDK extraction: Phase 24 — [#17 — extract coordinator and client into @cahmls/sdk](https://github.com/sandwichfarm/CAHMLS/pull/17) — opened 2026-11-05. Deferred: [#18](https://github.com/sandwichfarm/CAHMLS/issues/18).
+JSR publication: Phase 25 — preparing a CI workflow to publish `@sandwich/cahmls` after successful default-branch CI. Work is isolated on `ci/publish-sdk-jsr`; existing checkout changes are preserved.
 
 Progress: [██████████░░░░░░░░░░] 3/6 phases ([█████████░] 93%)
 
