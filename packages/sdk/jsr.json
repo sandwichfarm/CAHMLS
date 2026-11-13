@@ -1,6 +1,7 @@
 {
   "name": "@sandwich/cahmls",
   "version": "0.1.0",
+  "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
     "./client": "./src/client/index.ts",
@@ -17,6 +18,7 @@
     "include": [
       "src/**/*.ts",
       "README.md",
+      "LICENSE",
       "package.json",
       "jsr.json"
     ]

@@ -39,6 +39,10 @@ if (jsrManifest.name !== "@sandwich/cahmls") {
 if (jsrManifest.version !== manifest.version) {
   fail(`JSR version ${jsrManifest.version} does not match package version ${manifest.version}`);
 }
+if (jsrManifest.license !== "MIT" || manifest.license !== jsrManifest.license) {
+  fail("SDK and JSR manifests must declare the selected MIT license");
+}
+if (!existsSync(join(root, "LICENSE"))) fail("SDK license file is missing");
 
 const runtimeExportPaths = Object.keys(runtimeExports).sort();
 const jsrExportPaths = Object.keys(jsrManifest.exports ?? {}).sort();
@@ -90,7 +94,7 @@ const packed = JSON.parse(execFileSync("npm", ["pack", "--dry-run", "--json", "-
   encoding: "utf8",
   stdio: ["ignore", "pipe", "ignore"],
 }))[0].files.map((entry) => entry.path);
-for (const required of ["package.json", "README.md", "dist/index.js", "dist/index.d.ts"]) {
+for (const required of ["package.json", "README.md", "LICENSE", "dist/index.js", "dist/index.d.ts"]) {
   if (!packed.includes(required)) fail(`tarball is missing ${required}`);
 }
 for (const path of packed) {
